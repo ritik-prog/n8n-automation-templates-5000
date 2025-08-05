@@ -14,7 +14,7 @@ Welcome to the **largest open-source collection of production-grade n8n workflow
 
 ---
 
-## 📂 Folder Highlights (Auto-Generated Categories)
+## 📂 Folder Highlights
 
 ### 🔧 General Templates
 Stored under root directory with real-world workflows such as:
