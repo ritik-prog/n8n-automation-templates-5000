@@ -1,0 +1,86 @@
+{
+  "name": "Template 168",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://api.example.com/data",
+        "method": "GET"
+      },
+      "name": "API Polling",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "GitHub",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "AWS Lambda",
+      "type": "n8n-nodes-base.awslambda",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "API Polling": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub": {
+      "main": [
+        [
+          {
+            "node": "AWS Lambda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 168
+}

@@ -1,0 +1,260 @@
+{
+  "name": "generate-purchase-order-approval-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "po-create"
+      },
+      "id": "po1",
+      "name": "New PO Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b=$json.body||$json;\nconst total = (b.items||[]).reduce((s,it)=>s+Number(it.qty||1)*Number(it.unitPrice||0),0);\nconst dept = (b.department||'general').toLowerCase();\nlet approvers=[b.manager].filter(Boolean);\nif(total>5000) approvers.push('finance-director@yourcompany.com');\nif(total>20000) approvers.push('cfo@yourcompany.com');\nreturn [{json:{poId:b.poId||'po-'+Date.now(), vendor:b.vendor, email:b.requester, items:b.items||[], total, dept, approvers}}];\n"
+      },
+      "id": "po2",
+      "name": "Compute Approvers",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return ($json.approvers||[]).map(a=>({json:{approver:a,poId:$json.poId,total:$json.total,vendor:$json.vendor}}));"
+      },
+      "id": "po3",
+      "name": "Split Approvals",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "procurement@yourcompany.com",
+        "toEmail": "={{$json.approver}}",
+        "subject": "PO {{$json.poId}} requires your approval",
+        "text": "Approve: https://yourdomain.com/po-approve?id={{encodeURIComponent($json.poId)}}\\nDeny: https://yourdomain.com/po-deny?id={{encodeURIComponent($json.poId)}}"
+      },
+      "id": "po4",
+      "name": "Email Approver",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "po-approve"
+      },
+      "id": "po5",
+      "name": "Approve Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const q=$json.query||{}; return [{json:{poId:q.id, approver:q.from||'unknown', decision:'approved'}}];"
+      },
+      "id": "po6",
+      "name": "Normalize Approve",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "po-deny"
+      },
+      "id": "po7",
+      "name": "Deny Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const q=$json.query||{}; return [{json:{poId:q.id, approver:q.from||'unknown', decision:'denied'}}];"
+      },
+      "id": "po8",
+      "name": "Normalize Deny",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.erp.example.com/v1/po",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.erpToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "poId": "={{$json.poId}}",
+          "status": "={{$json.decision}}"
+        }
+      },
+      "id": "po9",
+      "name": "Update ERP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#procurement",
+        "text": "PO {{$json.poId}} {{$json.decision}} by {{$json.approver}}"
+      },
+      "id": "po10",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        600
+      ]
+    }
+  ],
+  "connections": {
+    "New PO Webhook": {
+      "main": [
+        [
+          {
+            "node": "Compute Approvers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Approvers": {
+      "main": [
+        [
+          {
+            "node": "Split Approvals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Approvals": {
+      "main": [
+        [
+          {
+            "node": "Email Approver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Approve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deny Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Deny",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Approve": {
+      "main": [
+        [
+          {
+            "node": "Update ERP",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Deny": {
+      "main": [
+        [
+          {
+            "node": "Update ERP",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

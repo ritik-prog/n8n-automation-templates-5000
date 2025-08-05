@@ -1,0 +1,340 @@
+{
+  "name": "create-automated-competitor-analysis-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 8 * * 1"
+      },
+      "id": "comp1",
+      "name": "Weekly Cron (Mon 08:00)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "competitor-tracker-sheet-id",
+        "range": "Competitors!A2:A999"
+      },
+      "id": "comp2",
+      "name": "Read Competitor Domains (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst rows = $json.rows || [];\nconst domains = rows.map(r => r[0]).filter(Boolean);\nreturn domains.map(d => ({ json: { domain: d } }));\n"
+      },
+      "id": "comp3",
+      "name": "Fan-out Domains",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://'+$json.domain}}",
+        "authentication": "none"
+      },
+      "id": "comp4",
+      "name": "Fetch Homepage (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://'+$json.domain+'/pricing'}}",
+        "authentication": "none"
+      },
+      "id": "comp5",
+      "name": "Fetch Pricing Page (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst home = $items().find(i=>i.node.name==='Fetch Homepage (HTTP)')?.json?.data || '';\nconst pricing = $items().find(i=>i.node.name==='Fetch Pricing Page (HTTP)')?.json?.data || '';\nreturn [{ json: { domain: $prevNode['Fan-out Domains'].json.domain, home, pricing } }];\n"
+      },
+      "id": "comp6",
+      "name": "Combine HTML",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You're a market analyst. Summarize competitor positioning, target segments, pricing tiers, key features, differentiators, and notable changes vs last week (if inferable). Return JSON {overview, pricing:[{plan, price, notes}], features:[...], differentiators:[...], risks:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "Domain: {{$json.domain}}\\nHomepage HTML (truncated): {{$json.home.slice(0,8000)}}\\nPricing HTML (truncated): {{$json.pricing.slice(0,8000)}}"
+          }
+        ]
+      },
+      "id": "comp7",
+      "name": "Analyze Competitor (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={overview:'Parse error',pricing:[],features:[],differentiators:[],risks:[]}}; return [{json:o}];"
+      },
+      "id": "comp8",
+      "name": "Parse Analysis JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "notion-competitor-db-id",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "={{$prevNode['Fan-out Domains'].json.domain}} ({{$now}})"
+                }
+              }
+            ]
+          },
+          "Overview": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.overview}}"
+                }
+              }
+            ]
+          },
+          "Features": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{($json.features||[]).join(', ')}}"
+                }
+              }
+            ]
+          },
+          "Differentiators": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{($json.differentiators||[]).join(', ')}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "comp9",
+      "name": "Create Notion Report",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        260
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_credential",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "competitor-reports-sheet-id",
+        "range": "Reports!A1",
+        "fields": [
+          "={{$prevNode['Fan-out Domains'].json.domain}}",
+          "={{$json.overview}}",
+          "={{JSON.stringify($json.pricing)}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "comp10",
+      "name": "Append to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        360
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#competitive-intel",
+        "text": ":mag: Competitor report ready for {{$prevNode['Fan-out Domains'].json.domain}}"
+      },
+      "id": "comp11",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1860,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Mon 08:00)": {
+      "main": [
+        [
+          {
+            "node": "Read Competitor Domains (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Competitor Domains (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Fan-out Domains",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan-out Domains": {
+      "main": [
+        [
+          {
+            "node": "Fetch Homepage (HTTP)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Pricing Page (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Homepage (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Combine HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pricing Page (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Combine HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine HTML": {
+      "main": [
+        [
+          {
+            "node": "Analyze Competitor (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Competitor (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Analysis JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Analysis JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Append to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

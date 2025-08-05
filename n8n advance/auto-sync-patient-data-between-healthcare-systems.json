@@ -1,0 +1,141 @@
+{
+  "name": "auto-sync-patient-data-between-healthcare-systems",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fhir-event"
+      },
+      "id": "ps1",
+      "name": "FHIR Event Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Accept FHIR resources Patient, Observation, Condition; simple upsert\nconst r=$json.body||$json;\nconst type=r.resourceType;\nconst id=r.id || (type+'-'+Date.now());\nreturn [{json:{type,id,resource:r}}];\n"
+      },
+      "id": "ps2",
+      "name": "Normalize FHIR",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Map minimal fields to destination schema (still FHIR)\nconst res=$json.resource;\nif(res.resourceType==='Patient'){\n  const patient={resourceType:'Patient', id:$json.id, name:res.name, telecom:res.telecom, birthDate:res.birthDate, identifier:res.identifier};\n  return [{json:{endpoint:'/Patient', payload:patient}}];\n} else if(res.resourceType==='Observation'){\n  const obs={...res, id:$json.id};\n  return [{json:{endpoint:'/Observation', payload:obs}}];\n} else if(res.resourceType==='Condition'){\n  const cond={...res, id:$json.id};\n  return [{json:{endpoint:'/Condition', payload:cond}}];\n} else {\n  return [{json:{endpoint:'/Bundle', payload:res}}];\n}\n"
+      },
+      "id": "ps3",
+      "name": "Transform for Destination",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ehr-dest.example.com/fhir{{$json.endpoint}}",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.destEhrToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/fhir+json"
+              }
+            ]
+          }
+        },
+        "options_json": "={{$json.payload}}"
+      },
+      "id": "ps4",
+      "name": "POST to Destination FHIR (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "edu-health-ops-sheet-id",
+        "range": "FHIRSync!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.endpoint}}",
+          "={{$json.payload.id || $json.payload.identifier?.[0]?.value || 'n/a'}}"
+        ]
+      },
+      "id": "ps5",
+      "name": "Log Sync",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "FHIR Event Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize FHIR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize FHIR": {
+      "main": [
+        [
+          {
+            "node": "Transform for Destination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform for Destination": {
+      "main": [
+        [
+          {
+            "node": "POST to Destination FHIR (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

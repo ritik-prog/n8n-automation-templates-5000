@@ -1,0 +1,103 @@
+{
+  "name": "Notify legal team from Vendor application and send to Compliance DB",
+  "nodes": [
+    {
+      "id": "trigger-vendor-application",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        169500
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "notify-legal-team-from-vendor-application-and-send-to-compliance-db",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-vendor-application",
+      "name": "Fetch data from Vendor application",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        169500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/vendor-application",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-compliance-db",
+      "name": "Send to Compliance DB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        169500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/compliance-db",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-169500",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        169500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Vendor application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Vendor application": {
+      "main": [
+        {
+          "node": "Send to Compliance DB",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Compliance DB": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

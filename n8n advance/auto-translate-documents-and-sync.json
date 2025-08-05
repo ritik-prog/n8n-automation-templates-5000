@@ -1,0 +1,258 @@
+{
+  "name": "auto-translate-documents-and-sync",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-document"
+      },
+      "id": "1",
+      "name": "Receive Document Upload",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "doc-upload"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "url": "={{$json.body.documentUrl}}"
+      },
+      "id": "2",
+      "name": "Download Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst text = $json.data || 'Sample content';\nreturn [{ json: { text } }];\n"
+      },
+      "id": "3",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a professional translator. Translate the provided text into Spanish, French, and German. Return JSON with fields: spanish, french, german."
+          },
+          {
+            "role": "user",
+            "content": "Text:\n{{$json.text}}"
+          }
+        ]
+      },
+      "id": "4",
+      "name": "Translate with GPT-4",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst result = JSON.parse($json.choices[0].message.content);\nreturn [{ json: result }];\n"
+      },
+      "id": "5",
+      "name": "Parse Translations",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "translated_es.txt",
+        "dataPropertyName": "spanish"
+      },
+      "id": "6",
+      "name": "Save Spanish File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "translated_fr.txt",
+        "dataPropertyName": "french"
+      },
+      "id": "7",
+      "name": "Save French File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "translated_de.txt",
+        "dataPropertyName": "german"
+      },
+      "id": "8",
+      "name": "Save German File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "bucket": "your-bucket-name",
+        "binaryPropertyName": "data",
+        "fileName": "={{$json.fileName}}"
+      },
+      "id": "9",
+      "name": "Upload to S3",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        300
+      ],
+      "credentials": {
+        "aws": {
+          "id": "aws_credential",
+          "name": "AWS S3"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Receive Document Upload": {
+      "main": [
+        [
+          {
+            "node": "Download Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Document": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "Translate with GPT-4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Translate with GPT-4": {
+      "main": [
+        [
+          {
+            "node": "Parse Translations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Translations": {
+      "main": [
+        [
+          {
+            "node": "Save Spanish File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save French File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save German File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Spanish File": {
+      "main": [
+        [
+          {
+            "node": "Upload to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save French File": {
+      "main": [
+        [
+          {
+            "node": "Upload to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save German File": {
+      "main": [
+        [
+          {
+            "node": "Upload to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,129 @@
+{
+  "name": "Create daily report from Calendar event and send to Slack",
+  "nodes": [
+    {
+      "id": "trigger-calendar-event",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        184500
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-daily-report-from-calendar-event-and-send-to-slack",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-calendar-event",
+      "name": "Fetch data from Calendar event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        184500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/calendar-event",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-create-daily-report",
+      "name": "AI: Create Daily Report",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        184500
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: create daily report"
+      }
+    },
+    {
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        184500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/slack",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-184500",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        184500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Calendar event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Calendar event": {
+      "main": [
+        {
+          "node": "AI: Create Daily Report",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Create Daily Report": {
+      "main": [
+        [
+          {
+            "node": "AI: Create Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Slack": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

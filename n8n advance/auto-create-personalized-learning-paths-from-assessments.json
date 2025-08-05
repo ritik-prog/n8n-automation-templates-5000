@@ -1,0 +1,217 @@
+{
+  "name": "auto-create-personalized-learning-paths-from-assessments",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "assessment-results"
+      },
+      "id": "lp1",
+      "name": "Assessment Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n/**\nExpected payload:\n{\n  \"student\": {\"id\":\"S123\",\"email\":\"learner@domain.com\",\"name\":\"Learner One\"},\n  \"courseId\":\"C101\",\n  \"topics\":[{\"id\":\"t1\",\"name\":\"Algebra\",\"score\":62},{\"id\":\"t2\",\"name\":\"Geometry\",\"score\":81},{\"id\":\"t3\",\"name\":\"Statistics\",\"score\":48}],\n  \"thresholds\":{\"mastery\":85,\"proficient\":70}\n}\n*/\nconst b=$json.body||$json;\nconst thr={mastery:85,proficient:70,...(b.thresholds||{})};\nconst plan=[];\nfor(const t of (b.topics||[])){\n  const s=Number(t.score||0);\n  let band='gap';\n  if(s>=thr.mastery) band='mastery';\n  else if(s>=thr.proficient) band='proficient';\n  const duration = band==='gap'? 5 : band==='proficient'? 2 : 0; // hours\n  const spaced = Array.from({length:3}, (_,i)=>({dayOffset:(i+1)*2, activity: i===2?'quiz':'practice'}));\n  plan.push({topicId:t.id, topic:t.name, score:s, band, modules:[\n    ...(band!=='mastery'?[{type:'video', minutes:20},{type:'reading', minutes:15}]:[]),\n    ...(band==='gap'?[{type:'tutor', minutes:30}]:[]),\n  ], spaced});\n}\nconst priority = plan.filter(p=>p.band!=='mastery').sort((a,b)=>a.score-b.score);\nconst learningPath = priority.map((p,idx)=>({order:idx+1, topic:p.topic, actions:p.modules, spaced:p.spaced}));\nreturn [{json:{student:b.student, courseId:b.courseId, plan:learningPath, all:plan}}];\n"
+      },
+      "id": "lp2",
+      "name": "Diagnose & Plan",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        360,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create concise learning objectives and a motivational note for each topic. Return pure JSON {objectives:[{topic,objectives:string[],message:string}] }."
+          },
+          {
+            "role": "user",
+            "content": "Student: {{$json.student.name}}\\nPlan: {{$json.plan}}"
+          }
+        ]
+      },
+      "id": "lp3",
+      "name": "AI Objectives",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        600,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let out={objectives:[]}; try{out=JSON.parse($json.choices[0].message.content)}catch(e){} return [{json:out}];"
+      },
+      "id": "lp4",
+      "name": "Parse AI JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        820,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://lms.example.com/api/courses/{{$prevNode['Diagnose & Plan'].json.courseId}}/paths",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.lmsToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "studentId": "={{$prevNode['Diagnose & Plan'].json.student.id}}",
+          "path": "={{$prevNode['Diagnose & Plan'].json.plan}}",
+          "objectives": "={{$json.objectives}}"
+        }
+      },
+      "id": "lp5",
+      "name": "Create LMS Path (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "edu-health-ops-sheet-id",
+        "range": "LearningPaths!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$prevNode['Diagnose & Plan'].json.student.id}}",
+          "={{$prevNode['Diagnose & Plan'].json.courseId}}",
+          "={{JSON.stringify($prevNode['Diagnose & Plan'].json.plan)}}"
+        ]
+      },
+      "id": "lp6",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "coach@school.edu",
+        "toEmail": "={{$prevNode['Diagnose & Plan'].json.student.email}}",
+        "subject": "Your Personalized Learning Path",
+        "text": "Hi {{$prevNode['Diagnose & Plan'].json.student.name}}, your learning path is ready in the LMS. Keep going!",
+        "options": {}
+      },
+      "id": "lp7",
+      "name": "Email Student",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1260,
+        350
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Assessment Webhook": {
+      "main": [
+        [
+          {
+            "node": "Diagnose & Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diagnose & Plan": {
+      "main": [
+        [
+          {
+            "node": "AI Objectives",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Objectives": {
+      "main": [
+        [
+          {
+            "node": "Parse AI JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI JSON": {
+      "main": [
+        [
+          {
+            "node": "Create LMS Path (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Student",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,103 @@
+{
+  "name": "Initiate approval from Vendor application and send to SharePoint",
+  "nodes": [
+    {
+      "id": "trigger-vendor-application",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        168600
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "initiate-approval-from-vendor-application-and-send-to-sharepoint",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-vendor-application",
+      "name": "Fetch data from Vendor application",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        168600
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/vendor-application",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-sharepoint",
+      "name": "Send to SharePoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        168600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/sharepoint",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-168600",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        168600
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Vendor application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Vendor application": {
+      "main": [
+        {
+          "node": "Send to SharePoint",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to SharePoint": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

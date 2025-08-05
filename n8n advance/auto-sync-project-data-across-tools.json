@@ -1,0 +1,194 @@
+{
+  "name": "auto-sync-project-data-across-tools",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/20 * * * *"
+      },
+      "id": "sd1",
+      "name": "Every 20 min",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.atlassian.com/ex/jira/cloud/123/rest/api/3/search?jql=project=PROJ AND updated>-15m",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.jiraToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sd2",
+      "name": "Fetch Jira Issues (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://app.asana.com/api/1.0/projects/pm-master-project-id/tasks?opt_fields=name,notes,completed,modified_at&modified_since={{encodeURIComponent(new Date(Date.now()-20*60000).toISOString())}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.asanaToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sd3",
+      "name": "Fetch Asana Tasks (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst jira = ($items(0).item.json.issues||[]).map(i=>({id:i.key, title:i.fields.summary, status:i.fields.status.name, updated:i.fields.updated}));\nconst asana = ($items(1).item.json.data||[]).map(t=>({id:t.gid, title:t.name, status:t.completed?'Done':'Open', updated:t.modified_at}));\n// naive mapping by title similarity\nfunction norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }\nconst mapA = new Map(asana.map(a=>[norm(a.title), a]));\nconst tasks=[];\nfor(const j of jira){\n  const k=norm(j.title);\n  const a=mapA.get(k);\n  if(!a) continue;\n  // if status mismatch, sync to Asana\n  if((a.status==='Done') !== (j.status.toLowerCase().includes('done')||j.status.toLowerCase().includes('closed'))){\n    tasks.push({action:'update-asana-status', asanaId:a.id, setDone:j.status.toLowerCase().includes('done')||j.status.toLowerCase().includes('closed'), source:j.id});\n  }\n}\nreturn tasks.map(t=>({json:t}));\n"
+      },
+      "id": "sd4",
+      "name": "Diff & Build Actions",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://app.asana.com/api/1.0/tasks/{{$json.asanaId}}",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.asanaToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "completed": "={{$json.setDone}}"
+        }
+      },
+      "id": "sd5",
+      "name": "Apply to Asana (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "pm-ops-sheet-id",
+        "range": "Sync!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.action}}",
+          "={{$json.asanaId}}",
+          "={{$json.source}}"
+        ]
+      },
+      "id": "sd6",
+      "name": "Log Sync",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 20 min": {
+      "main": [
+        [
+          {
+            "node": "Fetch Jira Issues (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Asana Tasks (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Jira Issues (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Diff & Build Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Asana Tasks (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Diff & Build Actions",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Diff & Build Actions": {
+      "main": [
+        [
+          {
+            "node": "Apply to Asana (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

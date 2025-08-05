@@ -1,0 +1,145 @@
+{
+  "name": "create-automated-commission-calculation-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 5 2 * *"
+      },
+      "id": "cm1",
+      "name": "Monthly on 2nd 05:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.crm.example.com/v2/deals?closed=last_month",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.crmToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cm2",
+      "name": "Fetch Closed-Won",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst deals=$json.deals||[];\nfunction calc(amount){ let rem=amount, pay=0; const tiers=[[50000,0.08],[50000,0.10],[Infinity,0.12]]; for(const [cap,rate] of tiers){ const take=Math.min(rem,cap); pay+=take*rate; rem-=take; if(rem<=0) break; } return +pay.toFixed(2); }\nconst byRep={};\nfor(const d of deals){ const rep=d.ownerEmail||'unknown'; byRep[rep]=(byRep[rep]||0)+calc(+d.amount||0); }\nreturn Object.entries(byRep).map(([rep,commission])=>({json:{rep,commission}}));\n"
+      },
+      "id": "cm3",
+      "name": "Compute Commissions",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "Commissions!A1",
+        "fields": [
+          "={{$json.rep}}",
+          "={{$json.commission}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "cm4",
+      "name": "Write to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "payroll@yourcompany.com",
+        "toEmail": "={{$json.rep}}",
+        "subject": "Your monthly commission statement",
+        "text": "Hi, your calculated commission for last month is {{$json.commission}}. Finance will process this with payroll."
+      },
+      "id": "cm5",
+      "name": "Email Reps",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monthly on 2nd 05:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Closed-Won",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Closed-Won": {
+      "main": [
+        [
+          {
+            "node": "Compute Commissions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Commissions": {
+      "main": [
+        [
+          {
+            "node": "Write to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Reps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

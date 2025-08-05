@@ -1,0 +1,269 @@
+{
+  "name": "auto-create-telehealth-appointment-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telehealth-create"
+      },
+      "id": "th1",
+      "name": "Telehealth Create Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n/**\npayload: {patient:{id, email, phone, name}, clinician:{email,name}, start:'ISO', reason:'', orgId:'ORG1'}\n*/\nconst b=$json.body||$json;\nconst id='th-'+Date.now();\nreturn [{json:{id, ...b}}];\n"
+      },
+      "id": "th2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://video.example.com/api/rooms",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.videoToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "name": "={{$json.id}}",
+          "start": "={{$json.start}}",
+          "participants": [
+            "={{$json.patient.email}}",
+            "={{$json.clinician.email}}"
+          ]
+        }
+      },
+      "id": "th3",
+      "name": "Create Video Room (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://esign.example.com/api/consent",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.esignToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "patient": "={{$json.patient.email}}",
+          "templateId": "telehealth-consent",
+          "context": {
+            "appointmentId": "={{$json.id}}",
+            "date": "={{$json.start}}"
+          }
+        }
+      },
+      "id": "th4",
+      "name": "Send eConsent (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#telehealth",
+        "text": "\ud83d\udcc5 Telehealth appt {{$json.id}} scheduled for {{$json.start}} (PHI redacted)."
+      },
+      "id": "th5",
+      "name": "Slack (redacted)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "no-reply@hospital.org",
+        "toEmail": "={{$json.patient.email}}",
+        "subject": "Your Telehealth Appointment",
+        "text": "Your telehealth visit is scheduled for {{$json.start}}. Video link will be sent 15 minutes before. Please sign consent sent separately."
+      },
+      "id": "th6",
+      "name": "Email Patient",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "no-reply@hospital.org",
+        "toEmail": "={{$json.clinician.email}}",
+        "subject": "Telehealth Visit Scheduled",
+        "text": "Visit {{$json.id}} at {{$json.start}}. Patient details in EHR (do not include PHI in email)."
+      },
+      "id": "th7",
+      "name": "Email Clinician",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "cronExpression": "*/5 * * * *"
+      },
+      "id": "th8",
+      "name": "Every 5 min",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://video.example.com/api/rooms/{{$prevNode['Normalize'].json.id}}/invites",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.videoToken}}"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "sendAt": "={{new Date(Date.parse($prevNode['Normalize'].json.start)-15*60000).toISOString()}}",
+          "to": [
+            "={{$prevNode['Normalize'].json.patient.email}}",
+            "={{$prevNode['Normalize'].json.clinician.email}}"
+          ]
+        }
+      },
+      "id": "th9",
+      "name": "Schedule Video Invites (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Telehealth Create Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Create Video Room (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send eConsent (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack (redacted)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Patient",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Clinician",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 5 min": {
+      "main": [
+        [
+          {
+            "node": "Schedule Video Invites (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

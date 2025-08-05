@@ -1,0 +1,86 @@
+{
+  "name": "Template 662",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "auto-hook-662",
+        "httpMethod": "POST"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "AWS CloudWatch",
+      "type": "n8n-nodes-base.awscloudwatch",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Security API",
+      "type": "n8n-nodes-base.securityapi",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "AWS CloudWatch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS CloudWatch": {
+      "main": [
+        [
+          {
+            "node": "Security API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 662
+}

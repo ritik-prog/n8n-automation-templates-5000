@@ -1,0 +1,86 @@
+{
+  "name": "Template 240",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://api.example.com/data",
+        "method": "GET"
+      },
+      "name": "API Polling",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Jira",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Todoist",
+      "type": "n8n-nodes-base.todoist",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "API Polling": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "Jira",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jira": {
+      "main": [
+        [
+          {
+            "node": "Todoist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 240
+}

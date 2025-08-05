@@ -1,0 +1,221 @@
+{
+  "name": "generate-pipeline-forecasts-from-crm-data",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * 1"
+      },
+      "id": "p1",
+      "name": "Weekly Cron (Mon 07:00)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "id": "p2",
+      "name": "Fetch Deals (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst deals = Array.isArray($json)?$json:[$json];\n// Build pipeline summary and stage weights\nconst stageWeights = {\n  'appointmentscheduled': 0.2,\n  'qualifiedtobuy': 0.4,\n  'presentation': 0.6,\n  'decisionmakerboughtin': 0.8,\n  'contractsent': 0.9,\n  'closedwon': 1.0\n};\nconst now = new Date();\nconst summary = { total:0, weighted:0, byMonth:{}, byStage:{} };\nfor (const d of deals) {\n  const amt = Number(d.properties?.amount || 0);\n  const stage = (d.properties?.dealstage || '').toLowerCase();\n  const weight = stageWeights[stage] ?? 0.2;\n  summary.total += amt;\n  summary.weighted += amt * weight;\n  const close = d.properties?.closedate ? new Date(d.properties.closedate) : null;\n  const key = close ? `${close.getUTCFullYear()}-${String(close.getUTCMonth()+1).padStart(2,'0')}` : `${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,'0')}`;\n  summary.byMonth[key] = (summary.byMonth[key] || 0) + amt * weight;\n  summary.byStage[stage] = (summary.byStage[stage] || 0) + amt;\n}\nreturn [{ json: summary }];\n"
+      },
+      "id": "p3",
+      "name": "Aggregate Pipeline",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a revenue analyst. Using the pipeline summary, generate a 3-month forecast (base/best/worst) and key risks/opportunities. Return JSON {forecast:[{month, base, best, worst}], commentary:[...] }."
+          },
+          {
+            "role": "user",
+            "content": "Pipeline summary: {{$json}}"
+          }
+        ]
+      },
+      "id": "p4",
+      "name": "AI Forecast (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={forecast:[],commentary:['Parse error']}};return [{json:o}];"
+      },
+      "id": "p5",
+      "name": "Parse Forecast JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "pipeline-forecast-sheet-id",
+        "range": "Forecast!A1",
+        "fields": [
+          "={{$json.month}}",
+          "={{$json.base}}",
+          "={{$json.best}}",
+          "={{$json.worst}}"
+        ]
+      },
+      "id": "p6",
+      "name": "Write Forecast Rows (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        240
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst rows = ($json.forecast||[]).map(f => ({ json: f }));\nreturn rows;\n"
+      },
+      "id": "p5b",
+      "name": "Fan-out Forecast Rows",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#revops",
+        "text": "*Pipeline Forecast*\\n{{$json.forecast?.map(f=>f.month+': base '+f.base+' (best '+f.best+' / worst '+f.worst+')').join('\\n')}}\\nNotes: {{$json.commentary?.join(' | ')}}"
+      },
+      "id": "p7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Mon 07:00)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deals (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deals (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Pipeline": {
+      "main": [
+        [
+          {
+            "node": "AI Forecast (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Forecast (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Forecast JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Forecast JSON": {
+      "main": [
+        [
+          {
+            "node": "Fan-out Forecast Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan-out Forecast Rows": {
+      "main": [
+        [
+          {
+            "node": "Write Forecast Rows (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,150 @@
+{
+  "name": "auto-update-website-content-from-marketing-calendar",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 * * *"
+      },
+      "id": "wc1",
+      "name": "Daily 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "marketing-calendar-sheet-id",
+        "range": "Calendar!A2:G999"
+      },
+      "id": "wc2",
+      "name": "Load Calendar (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[];const today=new Date();const iso=today.toISOString().slice(0,10);return rows.filter(r=> (r[1]||'').slice(0,10)===iso).map(r=>({json:{slug:r[0],publishDate:r[1],title:r[2],body:r[3],cta:r[4],tags:(r[5]||'').split(','),platform:r[6]||'webflow'}}));"
+      },
+      "id": "wc3",
+      "name": "Pick Today's Items",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.webflow.com/collections/{{$credentials.webflowCollectionId}}/items",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.webflowToken}}"
+              },
+              {
+                "name": "accept-version",
+                "value": "1.0.0"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "fields": {
+            "name": "={{$json.title}}",
+            "slug": "={{$json.slug}}",
+            "_draft": false,
+            "_archived": false,
+            "rich_content": "={{$json.body}}",
+            "tags": "={{$json.tags.join(', ')}}",
+            "cta": "={{$json.cta}}"
+          }
+        }
+      },
+      "id": "wc4",
+      "name": "Update Webflow CMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#content",
+        "text": "Published: {{$json.title}} ({{$json.slug}})"
+      },
+      "id": "wc6",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Calendar (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Calendar (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Pick Today's Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Today's Items": {
+      "main": [
+        [
+          {
+            "node": "Update Webflow CMS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

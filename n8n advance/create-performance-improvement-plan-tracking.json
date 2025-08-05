@@ -1,0 +1,162 @@
+{
+  "name": "create-performance-improvement-plan-tracking",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pip-create"
+      },
+      "id": "pp1",
+      "name": "PIP Create Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; const milestones=b.milestones||['Week 2 check','Week 4 check','Week 6 final']; return [{json:{employee:b.employee,manager:b.manager,start:b.start||new Date().toISOString().slice(0,10),milestones}}];"
+      },
+      "id": "pp2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const m=$json.milestones||[]; const start=new Date($json.start); return m.map((name,i)=>({json:{name, due:new Date(start.getTime()+(i+1)*14*86400000).toISOString().slice(0,10), manager:$json.manager, employee:$json.employee}}));"
+      },
+      "id": "pp3",
+      "name": "Expand Milestones",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "task",
+        "workspace": "asana-workspace-id",
+        "name": "={{$json.name}}",
+        "additionalFields": {
+          "assignee": "={{$json.manager}}",
+          "notes": "={{'PIP for '+$json.employee}}",
+          "dueOn": "={{$json.due}}",
+          "projects": [
+            "pip-project-id"
+          ]
+        }
+      },
+      "id": "pp4",
+      "name": "Create Asana Task",
+      "type": "n8n-nodes-base.asana",
+      "typeVersion": 1,
+      "position": [
+        760,
+        240
+      ],
+      "credentials": {
+        "asanaApi": {
+          "id": "asana_cred",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "pip-sheet-id",
+        "range": "PIPs!A1",
+        "fields": [
+          "={{$json.employee}}",
+          "={{$json.name}}",
+          "={{$json.due}}",
+          "open",
+          "={{$now}}"
+        ]
+      },
+      "id": "pp5",
+      "name": "Log (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "\ud83d\udea9 PIP milestone created: {{$json.name}} for {{$json.employee}} (due {{$json.due}})"
+      },
+      "id": "pp6",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "PIP Create Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Expand Milestones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Milestones": {
+      "main": [
+        [
+          {
+            "node": "Create Asana Task",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

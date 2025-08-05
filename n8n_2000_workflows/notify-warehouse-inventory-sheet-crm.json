@@ -1,0 +1,103 @@
+{
+  "name": "Notify warehouse from Inventory sheet and send to CRM",
+  "nodes": [
+    {
+      "id": "trigger-inventory-sheet",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        177000
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "notify-warehouse-from-inventory-sheet-and-send-to-crm",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-inventory-sheet",
+      "name": "Fetch data from Inventory sheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        177000
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/inventory-sheet",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-crm",
+      "name": "Send to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        177000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/crm",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-177000",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        177000
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Inventory sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Inventory sheet": {
+      "main": [
+        {
+          "node": "Send to CRM",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to CRM": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

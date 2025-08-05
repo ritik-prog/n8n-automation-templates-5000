@@ -1,0 +1,119 @@
+{
+  "name": "auto-sync-support-tickets-with-project-management-tools",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ticket-tagged-project"
+      },
+      "id": "pm1",
+      "name": "Ticket Tagged Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{id:b.id,title:b.subject||'',desc:b.description||'',project:b.project||'SUPPORT',assignee:b.assignee||''}}];"
+      },
+      "id": "pm2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "task",
+        "workspace": "asana-workspace-id",
+        "name": "={{'Support: '+$json.title}}",
+        "additionalFields": {
+          "assignee": "={{$json.assignee}}",
+          "notes": "={{'From ticket #'+$json.id+'\\n'+$json.desc}}",
+          "projects": [
+            "support-pm-project-id"
+          ]
+        }
+      },
+      "id": "pm3",
+      "name": "Create Asana Task",
+      "type": "n8n-nodes-base.asana",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ],
+      "credentials": {
+        "asanaApi": {
+          "id": "asana_cred",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "issue",
+        "projectKey": "ENG",
+        "summary": "={{'Support: '+$json.title}}",
+        "description": "={{'From ticket #'+$json.id+'\\n'+$json.desc}}",
+        "additionalFields": {
+          "issuetype": {
+            "name": "Task"
+          }
+        }
+      },
+      "id": "pm4",
+      "name": "Create Jira Issue",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 2,
+      "position": [
+        540,
+        360
+      ],
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "jira_cred",
+          "name": "Jira Cloud"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Ticket Tagged Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Create Asana Task",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Jira Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

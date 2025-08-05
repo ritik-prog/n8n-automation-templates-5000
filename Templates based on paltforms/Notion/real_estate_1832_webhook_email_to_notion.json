@@ -1,0 +1,107 @@
+{
+  "name": "Template 1832",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "auto-hook-1832",
+        "httpMethod": "POST"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Email",
+      "type": "n8n-nodes-base.email",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Skyscanner",
+      "type": "n8n-nodes-base.skyscanner",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email": {
+      "main": [
+        [
+          {
+            "node": "Notion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion": {
+      "main": [
+        [
+          {
+            "node": "Skyscanner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 1832
+}

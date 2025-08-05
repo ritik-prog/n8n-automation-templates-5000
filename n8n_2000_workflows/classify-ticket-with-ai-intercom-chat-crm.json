@@ -1,0 +1,129 @@
+{
+  "name": "Classify ticket with ai from Intercom chat and send to CRM",
+  "nodes": [
+    {
+      "id": "trigger-intercom-chat",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        83900
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "classify-ticket-with-ai-from-intercom-chat-and-send-to-crm",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-intercom-chat",
+      "name": "Fetch data from Intercom chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        83900
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/intercom-chat",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-classify-ticket-with-ai",
+      "name": "AI: Classify Ticket With Ai",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        83900
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: classify ticket with AI"
+      }
+    },
+    {
+      "id": "send-crm",
+      "name": "Send to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        83900
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/crm",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-83900",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        83900
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Intercom chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Intercom chat": {
+      "main": [
+        {
+          "node": "AI: Classify Ticket With Ai",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Classify Ticket With Ai": {
+      "main": [
+        [
+          {
+            "node": "AI: Classify Ticket With Ai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to CRM": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

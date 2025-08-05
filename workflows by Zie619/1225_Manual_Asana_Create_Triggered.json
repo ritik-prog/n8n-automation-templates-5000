@@ -1,0 +1,48 @@
+{
+  "id": "98",
+  "name": "Create a new task in Asana",
+  "nodes": [
+    {
+      "name": "On clicking 'execute'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {},
+      "typeVersion": 1
+    },
+    {
+      "name": "Asana",
+      "type": "n8n-nodes-base.asana",
+      "position": [
+        450,
+        300
+      ],
+      "parameters": {
+        "name": "",
+        "workspace": "",
+        "otherProperties": {}
+      },
+      "credentials": {
+        "asanaApi": ""
+      },
+      "typeVersion": 1
+    }
+  ],
+  "active": false,
+  "settings": {},
+  "connections": {
+    "On clicking 'execute'": {
+      "main": [
+        [
+          {
+            "node": "Asana",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "name": "generate-product-description-from-image",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "product-image-upload"
+      },
+      "id": "1",
+      "name": "Image Upload Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "image-to-description"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "url": "={{$json.body.imageUrl}}"
+      },
+      "id": "2",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "file",
+        "file": "={{$binary.data}}",
+        "model": "gpt-4-vision-preview",
+        "prompt": "Generate a compelling and SEO-friendly product title and description for an eCommerce website based on the image. Respond in JSON with fields: title, description, tags."
+      },
+      "id": "3",
+      "name": "Generate Description (GPT-4 Vision)",
+      "type": "n8n-nodes-custom.openaiVision",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_vision_credential",
+          "name": "OpenAI API Vision"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst data = JSON.parse($json.data);\nreturn [{ json: {\n  title: data.title,\n  description: data.description,\n  tags: data.tags\n}}];\n"
+      },
+      "id": "4",
+      "name": "Parse AI Vision Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "your-sheet-id",
+        "range": "Products!A1",
+        "valueInputMode": "USER_ENTERED",
+        "fields": [
+          "={{$json.title}}",
+          "={{$json.description}}",
+          "={{$json.tags}}"
+        ]
+      },
+      "id": "5",
+      "name": "Save to Product Catalog (Sheet)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Image Upload Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Generate Description (GPT-4 Vision)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Description (GPT-4 Vision)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Vision Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Vision Output": {
+      "main": [
+        [
+          {
+            "node": "Save to Product Catalog (Sheet)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

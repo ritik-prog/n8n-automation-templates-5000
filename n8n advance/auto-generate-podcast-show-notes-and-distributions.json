@@ -1,0 +1,196 @@
+{
+  "name": "auto-generate-podcast-show-notes-and-distributions",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "podcast-episode"
+      },
+      "id": "pc1",
+      "name": "Episode Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{audioUrl:b.audioUrl,title:b.title||'',guests:b.guests||''}}];"
+      },
+      "id": "pc2",
+      "name": "Normalize Episode",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "transcribe",
+        "audioUrl": "={{$json.audioUrl}}",
+        "model": "whisper-1"
+      },
+      "id": "pc3",
+      "name": "Transcribe (OpenAI Whisper)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.25,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create podcast show notes with summary, key takeaways, and timestamps if cues present. Return JSON {summary, takeaways:[...], chapters:[{time, title}], social:[{channel,text}]}."
+          },
+          {
+            "role": "user",
+            "content": "Title {{$prevNode['Normalize Episode'].json.title}} Guests {{$prevNode['Normalize Episode'].json.guests}} Transcript: {{$json.text || $json}}"
+          }
+        ]
+      },
+      "id": "pc4",
+      "name": "Generate Show Notes (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={summary:'',takeaways:[],chapters:[],social:[]}};const md=`# Show Notes\\n\\n## Summary\\n${o.summary}\\n\\n## Key Takeaways\\n${(o.takeaways||[]).map(t=>'- '+t).join('\\n')}\\n\\n## Chapters\\n${(o.chapters||[]).map(c=>'- '+(c.time||'')+' '+c.title).join('\\n')}`; const b64=Buffer.from(md).toString('base64'); return [{json:o,binary:{file:{data:b64,fileName:($prevNode['Normalize Episode'].json.title||'episode')+'.md',mimeType:'text/markdown'}}}];"
+      },
+      "id": "pc5",
+      "name": "Build Notes (binary)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "binaryData": "={{$binary.file}}",
+        "options": {
+          "parentId": "podcast-notes-folder-id"
+        }
+      },
+      "id": "pc6",
+      "name": "Upload Notes to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#podcast",
+        "text": "Show notes ready for {{$prevNode['Normalize Episode'].json.title}} \u2014 {{$prevNode['Upload Notes to Drive'].json.webViewLink}}"
+      },
+      "id": "pc7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Episode Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Episode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Episode": {
+      "main": [
+        [
+          {
+            "node": "Transcribe (OpenAI Whisper)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe (OpenAI Whisper)": {
+      "main": [
+        [
+          {
+            "node": "Generate Show Notes (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Show Notes (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Build Notes (binary)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notes (binary)": {
+      "main": [
+        [
+          {
+            "node": "Upload Notes to Drive",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

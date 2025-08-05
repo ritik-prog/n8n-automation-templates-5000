@@ -1,0 +1,199 @@
+{
+  "name": "create-automated-customer-satisfaction-surveys",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ticket-resolved"
+      },
+      "id": "cs1",
+      "name": "Ticket Resolved Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{ticketId:b.id, email:(b.requester||'').toLowerCase(), subject:b.subject||''}}];"
+      },
+      "id": "cs2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "support@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "How did we do? (Ticket {{$json.ticketId}})",
+        "text": "Hi,\\nPlease rate your experience: https://yourdomain.com/csat?tid={{encodeURIComponent($json.ticketId)}}\\nThanks!"
+      },
+      "id": "cs3",
+      "name": "Send CSAT Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "csat-response"
+      },
+      "id": "cs4",
+      "name": "CSAT Response Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{ticketId:b.tid, score:Number(b.score||0), comment:b.comment||''}}];"
+      },
+      "id": "cs5",
+      "name": "Normalize Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Classify CSAT comment sentiment and themes. Return JSON {sentiment:'pos|neu|neg', themes:[...], summary}."
+          },
+          {
+            "role": "user",
+            "content": "{{$json}}"
+          }
+        ]
+      },
+      "id": "cs6",
+      "name": "AI Tag CSAT",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        520
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "support-analytics-sheet-id",
+        "range": "CSAT!A1",
+        "fields": [
+          "={{$prevNode['Normalize Response'].json.ticketId}}",
+          "={{$prevNode['Normalize Response'].json.score}}",
+          "={{$json.sentiment}}",
+          "={{($json.themes||[]).join(', ')}}",
+          "={{$json.summary}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "cs7",
+      "name": "Log CSAT (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        520
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Ticket Resolved Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Send CSAT Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CSAT Response Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Response": {
+      "main": [
+        [
+          {
+            "node": "AI Tag CSAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Tag CSAT": {
+      "main": [
+        [
+          {
+            "node": "Log CSAT (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

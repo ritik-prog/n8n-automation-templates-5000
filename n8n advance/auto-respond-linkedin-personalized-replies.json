@@ -1,0 +1,145 @@
+{
+  "name": "auto-respond-linkedin-personalized-replies",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "linkedin-message-received"
+      },
+      "id": "1",
+      "name": "LinkedIn Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "linkedin-msg-in"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { senderName: $json.body.senderName, message: $json.body.message, context: $json.body.context } }];"
+      },
+      "id": "2",
+      "name": "Extract LinkedIn Message",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a professional assistant. Generate a personalized reply to this LinkedIn message. Be friendly, relevant to context, and concise. Return JSON: {reply}"
+          },
+          {
+            "role": "user",
+            "content": "Name: {{$json.senderName}}\nMessage: {{$json.message}}\nContext: {{$json.context}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate LinkedIn Reply (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const parsed = JSON.parse($json.choices[0].message.content); return [{ json: { reply: parsed.reply } }];"
+      },
+      "id": "4",
+      "name": "Parse GPT-4 Reply",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "recipient": "={{$json.senderName}}",
+        "message": "={{$json.reply}}"
+      },
+      "id": "5",
+      "name": "Send LinkedIn Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "linkedin_auth",
+          "name": "LinkedIn HTTP Auth"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "LinkedIn Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract LinkedIn Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract LinkedIn Message": {
+      "main": [
+        [
+          {
+            "node": "Generate LinkedIn Reply (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate LinkedIn Reply (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse GPT-4 Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse GPT-4 Reply": {
+      "main": [
+        [
+          {
+            "node": "Send LinkedIn Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

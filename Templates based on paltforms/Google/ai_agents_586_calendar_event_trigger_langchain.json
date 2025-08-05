@@ -1,0 +1,90 @@
+{
+  "name": "Template 586",
+  "nodes": [
+    {
+      "parameters": {
+        "calendar": "primary",
+        "resource": "event",
+        "operation": "watch"
+      },
+      "name": "Calendar Event Trigger",
+      "type": "n8n-nodes-base.googleCalendarTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "LangChain",
+      "type": "n8n-nodes-base.langchain",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "prompt": "Extract key entities and provide a short overview."
+      },
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Calendar Event Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "LangChain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LangChain": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 586
+}

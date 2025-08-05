@@ -1,0 +1,87 @@
+{
+  "name": "Template 334",
+  "nodes": [
+    {
+      "parameters": {
+        "calendar": "primary",
+        "resource": "event",
+        "operation": "watch"
+      },
+      "name": "Calendar Event Trigger",
+      "type": "n8n-nodes-base.googleCalendarTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Stripe",
+      "type": "n8n-nodes-base.stripe",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Clearbit",
+      "type": "n8n-nodes-base.clearbit",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Calendar Event Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "Stripe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stripe": {
+      "main": [
+        [
+          {
+            "node": "Clearbit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 334
+}

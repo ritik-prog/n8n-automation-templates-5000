@@ -1,0 +1,103 @@
+{
+  "name": "Update campaign analytics from Campaign brief and send to Google Ads",
+  "nodes": [
+    {
+      "id": "trigger-campaign-brief",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        72500
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-campaign-analytics-from-campaign-brief-and-send-to-google-ads",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-campaign-brief",
+      "name": "Fetch data from Campaign brief",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        72500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/campaign-brief",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-google-ads",
+      "name": "Send to Google Ads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        72500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/google-ads",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-72500",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        72500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Campaign brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Campaign brief": {
+      "main": [
+        {
+          "node": "Send to Google Ads",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Google Ads": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

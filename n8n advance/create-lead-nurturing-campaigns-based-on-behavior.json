@@ -1,0 +1,252 @@
+{
+  "name": "create-lead-nurturing-campaigns-based-on-behavior",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 5 * * *"
+      },
+      "id": "ln1",
+      "name": "Daily 05:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "last_email_open_date",
+                "operation": "IS_NOT_EMPTY"
+              },
+              {
+                "key": "lifecyclestage",
+                "operation": "EQUAL",
+                "value": "marketingqualifiedlead"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ln2",
+      "name": "Fetch MQLs with Activity (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        330,
+        320
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst leads = Array.isArray($json)?$json:[$json];\nconst segments = { reengage: [], product_interest: [], high_intent: [] };\nfor (const l of leads) {\n  const clicks = Number(l.properties?.hs_email_last_click_date ? 1 : 0);\n  const opens = Number(l.properties?.last_email_open_date ? 1 : 0);\n  const product = (l.properties?.product_interest||'').toLowerCase();\n  if (clicks && product) segments.product_interest.push(l);\n  else if (opens && !clicks) segments.reengage.push(l);\n  if (Number(l.properties?.lead_score_ai||0) >= 70) segments.high_intent.push(l);\n}\nreturn [{ json: segments }];\n"
+      },
+      "id": "ln3",
+      "name": "Segment Leads",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        560,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "For each segment (reengage, product_interest, high_intent) create a 3-step nurture plan. Return JSON {segmentPlans:{ reengage:[{subject, body, dayOffset}], product_interest:[{subject, body, dayOffset}], high_intent:[{subject, body, dayOffset}] }}."
+          },
+          {
+            "role": "user",
+            "content": "Segments: {{$json}}"
+          }
+        ]
+      },
+      "id": "ln4",
+      "name": "Design Nurture Content (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        790,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let plans; try{plans=JSON.parse($json.choices[0].message.content)}catch(e){plans={segmentPlans:{}}}; return [{json:plans}];"
+      },
+      "id": "ln5",
+      "name": "Parse Plans",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1010,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst plans = $json.segmentPlans || {};\nconst segments = $prevNode['Segment Leads'].json;\nconst out = [];\nfor (const s of Object.keys(plans)) {\n  const leads = segments[s] || [];\n  const step1 = (plans[s]||[])[0];\n  if (!step1) continue;\n  for (const l of leads) {\n    out.push({ json: { email: l.properties?.email, subject: step1.subject, body: step1.body } });\n  }\n}\nreturn out;\n"
+      },
+      "id": "ln6",
+      "name": "Prepare Immediate Sends",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1230,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "marketing@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "={{$json.subject}}",
+        "text": "={{$json.body}}"
+      },
+      "id": "ln7",
+      "name": "Send First Nurture Email (SMTP)",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        320
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "nurture-campaigns-sheet-id",
+        "range": "NurtureRuns!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.subject}}",
+          "={{$now}}",
+          "Sent"
+        ]
+      },
+      "id": "ln8",
+      "name": "Log Nurture Send",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1670,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 05:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch MQLs with Activity (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch MQLs with Activity (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Segment Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Segment Leads": {
+      "main": [
+        [
+          {
+            "node": "Design Nurture Content (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Design Nurture Content (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Plans",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Plans": {
+      "main": [
+        [
+          {
+            "node": "Prepare Immediate Sends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Immediate Sends": {
+      "main": [
+        [
+          {
+            "node": "Send First Nurture Email (SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send First Nurture Email (SMTP)": {
+      "main": [
+        [
+          {
+            "node": "Log Nurture Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

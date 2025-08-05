@@ -1,0 +1,201 @@
+{
+  "name": "generate-cash-flow-forecasting-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 * * *"
+      },
+      "id": "cf1",
+      "name": "Daily 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/ap?status=open",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cf2",
+      "name": "Fetch AP (open bills)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/ar?status=open",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cf3",
+      "name": "Fetch AR (open invoices)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.plaid.example.com/balance",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.plaidToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cf4",
+      "name": "Fetch Bank Balance",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nfunction bucketWeek(dateStr){ const d=new Date(dateStr); const now=new Date(); const diffW=Math.floor((d-now)/ (7*86400000)); return Math.max(0, Math.min(12, diffW)); }\nconst ap = ($items(0).item.json.bills||[]).map(b=>({week:bucketWeek(b.dueDate), out:+b.balance||0}));\nconst ar = ($items(1).item.json.invoices||[]).map(i=>({week:bucketWeek(i.dueDate), in:+i.balance||0}));\nconst balance = +(($items(2).item.json.balance)||0);\nconst weeks = Array.from({length:13},(_,i)=>({week:i,inflows:0,outflows:0,balance:null}));\nfor(const a of ar) weeks[a.week].inflows += a.in;\nfor(const b of ap) weeks[b.week].outflows += b.out;\nlet cur=balance;\nfor(const w of weeks){ cur += w.inflows - w.outflows; w.balance=+cur.toFixed(2); }\nreturn weeks.map(w=>({json:w}));\n"
+      },
+      "id": "cf5",
+      "name": "Forecast 13-week",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "CashFlow!A1",
+        "fields": [
+          "={{$json.week}}",
+          "={{$json.inflows}}",
+          "={{$json.outflows}}",
+          "={{$json.balance}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "cf6",
+      "name": "Write to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#treasury",
+        "text": "\ud83d\udca7 Cash flow forecast updated. Week 0 balance {{$json.balance}} (see sheet)."
+      },
+      "id": "cf7",
+      "name": "Slack Treasury",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch AP (open bills)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch AR (open invoices)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Bank Balance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AP (open bills)": {
+      "main": [
+        [
+          {
+            "node": "Forecast 13-week",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AR (open invoices)": {
+      "main": [
+        [
+          {
+            "node": "Forecast 13-week",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Bank Balance": {
+      "main": [
+        [
+          {
+            "node": "Forecast 13-week",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

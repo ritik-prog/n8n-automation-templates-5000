@@ -1,0 +1,110 @@
+{
+  "name": "Template 1604",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "auto-hook-1604",
+        "httpMethod": "POST"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Arxiv API",
+      "type": "n8n-nodes-base.arxivapi",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "prompt": "Extract key entities and provide a short overview."
+      },
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack": {
+      "main": [
+        [
+          {
+            "node": "Arxiv API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Arxiv API": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 1604
+}

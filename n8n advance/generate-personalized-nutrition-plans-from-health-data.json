@@ -1,0 +1,264 @@
+{
+  "name": "generate-personalized-nutrition-plans-from-health-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "health-data-intake"
+      },
+      "id": "1",
+      "name": "Health Data Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "health-data-intake"
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst profile = $json.body?.profile || {}; // {age, sex, height_cm, weight_kg}\nconst goals = $json.body?.goals || {}; // {target_weight, target_rate, goal_type}\nconst diet = $json.body?.diet || {}; // {vegetarian, vegan, keto, allergies:[], dislikes:[]}\nconst metrics = $json.body?.metrics || {}; // labs or wearable metrics\nreturn [{ json: { profile, goals, diet, metrics } }];\n"
+      },
+      "id": "2",
+      "name": "Extract Health Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a registered dietitian assistant (not medical advice). Based on the profile, goals, dietary constraints, and metrics, produce a 7-day nutrition plan. Return strict JSON with: caloriesTarget, macros:{protein_g, carbs_g, fat_g}, weeklyPlan:[{date, meals:[{name, timeHint, kcal, protein_g, carbs_g, fat_g, recipe, ingredients:[{item, qty, unit}], prepNotes}]}], groceryList:[{item, qty, unit, notes}], hydrationGuidance, notes, cautions."
+          },
+          {
+            "role": "user",
+            "content": "Profile: {{$json.profile}}\\nGoals: {{$json.goals}}\\nDiet: {{$json.diet}}\\nMetrics: {{$json.metrics}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Nutrition Plan (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet plan;\ntry { plan = JSON.parse($json.choices[0].message.content); } \ncatch(e) { plan = { error:'parse_error', raw:$json.choices?.[0]?.message?.content }; }\nreturn [{ json: plan }];\n"
+      },
+      "id": "4",
+      "name": "Parse Plan JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "notion-nutrition-db-id",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "Nutrition Plan - {{$now}}"
+                }
+              }
+            ]
+          },
+          "Calories": {
+            "number": "={{$json.caloriesTarget || 0}}"
+          },
+          "Macros": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{JSON.stringify($json.macros)}}"
+                }
+              }
+            ]
+          },
+          "Notes": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.notes || ''}}"
+                }
+              }
+            ]
+          },
+          "Cautions": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.cautions || ''}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "5",
+      "name": "Create Notion Plan Page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        240
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_credential",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "nutrition-grocery-sheet-id",
+        "range": "Grocery!A1",
+        "fields": [
+          "={{$json.item}}",
+          "={{$json.qty}}",
+          "={{$json.unit}}",
+          "={{$json.notes}}"
+        ]
+      },
+      "id": "6",
+      "name": "Write Grocery List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        360
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Fan-out weeklyPlan meals into calendar entries\nconst plan = $json;\nif (!Array.isArray(plan.weeklyPlan)) return [];\nconst timeMap = { Breakfast:'08:00:00', Lunch:'13:00:00', Dinner:'19:00:00' };\nconst out = [];\nfor (const day of plan.weeklyPlan) {\n  for (const m of (day.meals||[])) {\n    const start = (day.date || '').slice(0,10) + 'T' + (timeMap[m.name] || m.timeHint || '12:00:00');\n    const end = (day.date || '').slice(0,10) + 'T' + '01:00:00'; // duration placeholder handled downstream\n    out.push({ json: { start, end, title: m.name + ': ' + (m.recipe||''), description: `Kcal: ${m.kcal}\\nMacros P/C/F: ${m.protein_g}/${m.carbs_g}/${m.fat_g}\\nNotes: ${m.prepNotes||''}` } });\n  }\n}\nreturn out;\n"
+      },
+      "id": "7",
+      "name": "Meals \u2192 Calendar Items",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "calendar": "primary",
+        "start": "={{$json.start}}",
+        "end": "={{$json.start}}",
+        "summary": "={{$json.title}}",
+        "description": "={{$json.description}}"
+      },
+      "id": "8",
+      "name": "Create Calendar Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        300
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "gcal_cred",
+          "name": "Google Calendar"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Health Data Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Health Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Health Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Nutrition Plan (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Nutrition Plan (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Plan JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Plan JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Plan Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Meals \u2192 Calendar Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meals \u2192 Calendar Items": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

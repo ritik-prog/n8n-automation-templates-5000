@@ -1,0 +1,107 @@
+{
+  "name": "Template 1914",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://api.example.com/data",
+        "method": "GET"
+      },
+      "name": "API Polling",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Open Data API",
+      "type": "n8n-nodes-base.opendataapi",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Vector DB",
+      "type": "n8n-nodes-base.vectordb",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "API Polling": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack": {
+      "main": [
+        [
+          {
+            "node": "Open Data API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open Data API": {
+      "main": [
+        [
+          {
+            "node": "Vector DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 1914
+}

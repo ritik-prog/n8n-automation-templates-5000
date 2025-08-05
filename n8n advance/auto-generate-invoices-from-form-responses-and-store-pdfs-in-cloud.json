@@ -1,0 +1,280 @@
+{
+  "name": "auto-generate-invoices-from-form-responses-and-store-pdfs-in-cloud",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-form"
+      },
+      "id": "inv1",
+      "name": "Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b = $json.body || $json;\nif(!b.customerEmail || !Array.isArray(b.items) || b.items.length===0){\n  throw new Error('Invalid invoice payload: requires customerEmail and items[]');\n}\nconst items = b.items.map((it,i)=>{\n  const qty = Number(it.qty||1);\n  const price = Number(it.unitPrice||0);\n  const discount = Number(it.discount||0);\n  const line = Math.max(0, qty*price*(1-discount/100));\n  return { lineNo: i+1, sku: it.sku||'', name: it.name||`Item ${i+1}`, qty, unitPrice: price, discount, line };\n});\nconst subTotal = items.reduce((s,x)=>s+x.line,0);\nconst taxRate = Number(b.taxRate ?? 0.18);\nconst tax = +(subTotal*taxRate).toFixed(2);\nconst shipping = +(Number(b.shipping||0)).toFixed(2);\nconst total = +(subTotal + tax + shipping).toFixed(2);\nconst dueDate = (b.dueDate ? new Date(b.dueDate) : new Date(Date.now()+14*86400000)).toISOString().slice(0,10);\nreturn [{\n  json: {\n    customerName: b.customerName||'',\n    customerEmail: String(b.customerEmail).toLowerCase(),\n    billingAddress: b.billingAddress||'',\n    currency: b.currency||'USD',\n    poNumber: b.poNumber||'',\n    dueDate,\n    items, subTotal, taxRate, tax, shipping, total,\n    notes: b.notes||'',\n    externalId: b.externalId || `web-${Date.now()}`\n  }\n}];\n"
+      },
+      "id": "inv2",
+      "name": "Normalize & Compute",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/invoices",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "external_id": "={{$json.externalId}}",
+          "customer": {
+            "email": "={{$json.customerEmail}}",
+            "name": "={{$json.customerName}}",
+            "address": "={{$json.billingAddress}}"
+          },
+          "currency": "={{$json.currency}}",
+          "po_number": "={{$json.poNumber}}",
+          "due_date": "={{$json.dueDate}}",
+          "line_items": "={{$json.items}}",
+          "tax_rate": "={{$json.taxRate}}",
+          "shipping": "={{$json.shipping}}",
+          "subtotal": "={{$json.subTotal}}",
+          "total": "={{$json.total}}",
+          "notes": "={{$json.notes}}"
+        }
+      },
+      "id": "inv3",
+      "name": "Create Invoice (Accounting)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        560,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst items = $json.items||[];\nconst rows = items.map(i=>`<tr><td>${i.lineNo}</td><td>${i.name}</td><td>${i.qty}</td><td>${i.unitPrice.toFixed(2)}</td><td>${i.discount}%</td><td>${i.line.toFixed(2)}</td></tr>`).join('');\nconst html = `<!doctype html><html><head><meta charset=\"utf-8\"><style>\nbody{font-family:Arial,Helvetica,sans-serif;font-size:12px}\ntable{width:100%;border-collapse:collapse} th,td{border:1px solid #ddd;padding:6px;text-align:left}\nh1{font-size:18px}\n.right{text-align:right}\n.small{font-size:10px;color:#666}\n</style></head><body>\n<h1>Invoice</h1>\n<p><strong>Customer:</strong> ${$json.customerName} &lt;${$json.customerEmail}&gt;<br>\n<strong>PO:</strong> ${$json.poNumber||'-'} &nbsp; <strong>Due:</strong> ${$json.dueDate}</p>\n<table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Unit</th><th>Disc</th><th>Line</th></tr></thead><tbody>${rows}</tbody></table>\n<p class=\"right\"><strong>Subtotal</strong> ${$json.subTotal.toFixed(2)}<br>\n<strong>Tax</strong> ${$json.tax.toFixed(2)}<br>\n<strong>Shipping</strong> ${$json.shipping.toFixed(2)}<br>\n<strong>Total</strong> ${$json.total.toFixed(2)} ${$json.currency}</p>\n<p class=\"small\">Notes: ${$json.notes||''}</p>\n</body></html>`;\nreturn [{ json: { html, fileName: `invoice-${$json.externalId}.pdf` } }];\n"
+      },
+      "id": "inv4",
+      "name": "Render HTML",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        560,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.pdf-service.example.com/render",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pdfServiceToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "html": "={{$json.html}}",
+          "fileName": "={{$json.fileName}}",
+          "margin": "10mm"
+        }
+      },
+      "id": "inv5",
+      "name": "HTML \u2192 PDF (Service)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        780,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "resource": "file",
+        "binaryData": false,
+        "additionalFields": {
+          "fileName": "={{$json.fileName}}",
+          "binaryPropertyName": "data"
+        },
+        "bucketName": "finance-invoices",
+        "fileContent": "={{$json.html}}"
+      },
+      "id": "inv6",
+      "name": "Upload to S3 (HTML fallback)",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        420
+      ],
+      "credentials": {
+        "s3": {
+          "id": "s3_cred",
+          "name": "S3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "billing@yourcompany.com",
+        "toEmail": "={{$json.customerEmail}}",
+        "subject": "Your invoice is ready",
+        "text": "Hi {{$json.customerName}},\\nYour invoice total is {{$json.total}} {{$json.currency}} and is due on {{$json.dueDate}}. A PDF copy is attached / available in your portal.",
+        "options": {}
+      },
+      "id": "inv7",
+      "name": "Email Customer",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        220
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "Invoices!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.externalId}}",
+          "={{$json.customerEmail}}",
+          "={{$json.total}}",
+          "={{$json.currency}}",
+          "={{$json.dueDate}}"
+        ]
+      },
+      "id": "inv8",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        220
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#finance",
+        "text": "\ud83e\uddfe New invoice {{$json.externalId}} for {{$json.customerEmail}} ({{$json.total}} {{$json.currency}})"
+      },
+      "id": "inv9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        350
+      ]
+    }
+  ],
+  "connections": {
+    "Form Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Compute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & Compute": {
+      "main": [
+        [
+          {
+            "node": "Create Invoice (Accounting)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Render HTML",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Customer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render HTML": {
+      "main": [
+        [
+          {
+            "node": "HTML \u2192 PDF (Service)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload to S3 (HTML fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,263 @@
+{
+  "name": "create-exit-interview-scheduling-and-data-collection",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "exit-init"
+      },
+      "id": "ei1",
+      "name": "Exit Init Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{name:b.name,email:b.email,manager:b.manager,termDate:b.termDate||new Date(Date.now()+7*86400000).toISOString().slice(0,10),reason:b.reason||''}}];"
+      },
+      "id": "ei2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleapisToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "summary": "={{'Exit interview: '+$json.name}}",
+          "start": {
+            "dateTime": "={{new Date(Date.parse($json.termDate+'T10:00:00Z')-2*86400000).toISOString()}}"
+          },
+          "end": {
+            "dateTime": "={{new Date(Date.parse($json.termDate+'T10:00:00Z')-2*86400000+30*60000).toISOString()}}"
+          },
+          "attendees": "={{[{email:$json.email},{email:$json.manager}]}}",
+          "description": "Automated exit interview"
+        }
+      },
+      "id": "ei3",
+      "name": "Schedule Exit Interview",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "hr@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Exit interview & survey",
+        "text": "Hi {{$json.name}},\\nYour exit interview is scheduled. Please fill this short survey: https://yourdomain.com/exit-survey?e={{encodeURIComponent($json.email)}}\\n\u2014 HR"
+      },
+      "id": "ei4",
+      "name": "Email Employee",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "exit-survey"
+      },
+      "id": "ei5",
+      "name": "Survey Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{email:b.email,answers:b.answers||{},freeText:b.freeText||''}}];"
+      },
+      "id": "ei6",
+      "name": "Normalize Survey",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Summarize exit survey insights and categorize reasons. Return JSON {themes:[...], risks:[...], boomerangLikelihood:0-1, summary}."
+          },
+          {
+            "role": "user",
+            "content": "{{$json}}"
+          }
+        ]
+      },
+      "id": "ei7",
+      "name": "AI Summarize",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        500
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "hr-analytics-sheet-id",
+        "range": "ExitSurveys!A1",
+        "fields": [
+          "={{$prevNode['Normalize Survey'].json.email}}",
+          "={{$json.summary}}",
+          "={{($json.themes||[]).join(', ')}}",
+          "={{($json.risks||[]).join(', ')}}",
+          "={{$json.boomerangLikelihood}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "ei8",
+      "name": "Log Survey (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        500
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "\ud83d\udce4 Exit survey for {{$prevNode['Normalize Survey'].json.email}} \u2014 {{$json.summary}}"
+      },
+      "id": "ei9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Exit Init Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Schedule Exit Interview",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Employee",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Survey Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Survey",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Survey": {
+      "main": [
+        [
+          {
+            "node": "AI Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Summarize": {
+      "main": [
+        [
+          {
+            "node": "Log Survey (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

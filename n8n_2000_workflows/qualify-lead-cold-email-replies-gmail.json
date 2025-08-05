@@ -1,0 +1,103 @@
+{
+  "name": "Qualify lead from Cold email replies and send to Gmail",
+  "nodes": [
+    {
+      "id": "trigger-cold-email-replies",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        53700
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "qualify-lead-from-cold-email-replies-and-send-to-gmail",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-cold-email-replies",
+      "name": "Fetch data from Cold email replies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        53700
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/cold-email-replies",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-gmail",
+      "name": "Send to Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        53700
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/gmail",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-53700",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        53700
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Cold email replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Cold email replies": {
+      "main": [
+        {
+          "node": "Send to Gmail",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Gmail": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

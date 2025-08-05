@@ -1,0 +1,552 @@
+{
+  "name": "enrich-score-assign-leads",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "contact.creation"
+        ]
+      },
+      "id": "n1",
+      "name": "HubSpot New Contact Trigger",
+      "type": "n8n-nodes-base.hubspotTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "hubspotDeveloperApi": {
+          "id": "hubspot_trigger_cred",
+          "name": "HubSpot Trigger OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Normalize lead payload\nconst p = $json.body?.object?.properties || $json.properties || {};\nconst out = {\n  email: p.email || $json.email || '',\n  firstName: p.firstname || '',\n  lastName: p.lastname || '',\n  phone: p.phone || '',\n  company: p.company || '',\n  website: p.website || '',\n  jobTitle: p.jobtitle || '',\n  country: p.country || '',\n  productInterest: (p.product_interest || '').toLowerCase()\n};\nreturn [{ json: out }];\n"
+      },
+      "id": "n2",
+      "name": "Normalize Lead Fields",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        330,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "resource": "contact",
+        "additionalFields": {
+          "email": "={{$json.email}}"
+        }
+      },
+      "id": "n3",
+      "name": "De-dupe by Email",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        560,
+        210
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [],
+          "number": [],
+          "string": [
+            {
+              "value1": "={{$json.total || $json.results ? 'found' : ''}}",
+              "operation": "notEmpty"
+            }
+          ]
+        }
+      },
+      "id": "n4",
+      "name": "IF Already Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        780,
+        210
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://person.clearbit.com/v2/combined/find",
+        "options": {
+          "queryParametersUi": {
+            "parameter": [
+              {
+                "name": "email",
+                "value": "={{$json.email}}"
+              }
+            ]
+          },
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{ $credentials.clearbitApiKey }}"
+              }
+            ]
+          }
+        },
+        "authentication": "none"
+      },
+      "id": "n5",
+      "name": "Clearbit Enrichment (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        560,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.linkedin.com/v2/organizationLookup?q=vanityName&vanityName={{$json.company}}",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.linkedinAccessToken}}"
+              }
+            ]
+          }
+        },
+        "authentication": "none"
+      },
+      "id": "n6",
+      "name": "LinkedIn Company Lookup (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        560,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst lead = $prevNode['Normalize Lead Fields'].json;\nconst clearbit = $items().find(i=>i.node.name==='Clearbit Enrichment (HTTP)')?.json || {};\nconst linkedin = $items().find(i=>i.node.name==='LinkedIn Company Lookup (HTTP)')?.json || {};\nreturn [{ json: { lead, clearbit, linkedin } }];\n"
+      },
+      "id": "n7",
+      "name": "Merge Enrichment",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        790,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a B2B lead-scoring analyst. Score lead 0\u2013100 based on seniority, company size, tech fit, and product interest. Output JSON: {score, tier:'Hot|Warm|Cold', recommendedOwnerGroup:'ProductA|ProductB|General', reason, crossSellHints:[], firmo:{size,industry,estRevenue}}."
+          },
+          {
+            "role": "user",
+            "content": "Lead: {{$json.lead}}\\nClearbit: {{$json.clearbit}}\\nLinkedIn: {{$json.linkedin}}"
+          }
+        ]
+      },
+      "id": "n8",
+      "name": "AI Lead Score (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        480
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let out; try{out=JSON.parse($json.choices[0].message.content)}catch(e){out={score:55,tier:'Warm',recommendedOwnerGroup:'General',reason:'LLM parse fallback',crossSellHints:[],firmo:{}}}; return [{json:out}];"
+      },
+      "id": "n9",
+      "name": "Parse AI Score JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "product_a",
+              "value": "111111"
+            },
+            {
+              "name": "product_b",
+              "value": "222222"
+            },
+            {
+              "name": "general",
+              "value": "333333"
+            }
+          ]
+        }
+      },
+      "id": "n10",
+      "name": "Owner Routing Table",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst lead = $prevNode['Normalize Lead Fields'].json;\nconst group = ($prevNode['Parse AI Score JSON'].json.recommendedOwnerGroup||'General').toLowerCase();\nlet ownerId = 333333;\nif (lead.productInterest.includes('product a') || group.includes('producta')) ownerId = Number($prevNode['Owner Routing Table'].json.product_a);\nelse if (lead.productInterest.includes('product b') || group.includes('productb')) ownerId = Number($prevNode['Owner Routing Table'].json.product_b);\nelse ownerId = Number($prevNode['Owner Routing Table'].json.general);\nreturn [{ json: { ownerId } }];\n"
+      },
+      "id": "n11",
+      "name": "Resolve Owner ID",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "company",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "name",
+                "value": "={{$prevNode['Normalize Lead Fields'].json.company}}"
+              },
+              {
+                "property": "domain",
+                "value": "={{$prevNode['Normalize Lead Fields'].json.website}}"
+              },
+              {
+                "property": "industry",
+                "value": "={{$prevNode['Parse AI Score JSON'].json.firmo?.industry || ''}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "n12",
+      "name": "Create Company (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        560
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "update",
+        "updateFields": {
+          "email": "={{$prevNode['Normalize Lead Fields'].json.email}}",
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hubspot_owner_id",
+                "value": "={{$prevNode['Resolve Owner ID'].json.ownerId}}"
+              },
+              {
+                "property": "lead_score_ai",
+                "value": "={{$prevNode['Parse AI Score JSON'].json.score}}"
+              },
+              {
+                "property": "lead_tier_ai",
+                "value": "={{$prevNode['Parse AI Score JSON'].json.tier}}"
+              },
+              {
+                "property": "product_interest",
+                "value": "={{$prevNode['Normalize Lead Fields'].json.productInterest}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "n13",
+      "name": "Update Contact Properties",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        420
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "note",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hs_timestamp",
+                "value": "={{$now}}"
+              },
+              {
+                "property": "hs_note_body",
+                "value": "={{'AI Score: '+$prevNode['Parse AI Score JSON'].json.score+' ('+$prevNode['Parse AI Score JSON'].json.tier+')\\nReason: '+$prevNode['Parse AI Score JSON'].json.reason}}"
+              },
+              {
+                "property": "hs_attachment_ids",
+                "value": ""
+              }
+            ]
+          }
+        }
+      },
+      "id": "n14",
+      "name": "Create Note with Rationale",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        2120,
+        420
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#new-leads",
+        "text": "New lead *{{$prevNode['Normalize Lead Fields'].json.email}}* scored {{$prevNode['Parse AI Score JSON'].json.score}} ({{$prevNode['Parse AI Score JSON'].json.tier}}), owner {{$prevNode['Resolve Owner ID'].json.ownerId}}."
+      },
+      "id": "n15",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        2340,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#lead-errors",
+        "text": "Lead processing skipped (duplicate): {{$prevNode['Normalize Lead Fields'].json.email}}"
+      },
+      "id": "n16",
+      "name": "Slack Duplicate Notice",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        150
+      ]
+    }
+  ],
+  "connections": {
+    "HubSpot New Contact Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead Fields": {
+      "main": [
+        [
+          {
+            "node": "De-dupe by Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Clearbit Enrichment (HTTP)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "LinkedIn Company Lookup (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "De-dupe by Email": {
+      "main": [
+        [
+          {
+            "node": "IF Already Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Already Exists?": {
+      "main": [
+        [
+          {
+            "node": "Slack Duplicate Notice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clearbit Enrichment (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Merge Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Company Lookup (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Merge Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Enrichment": {
+      "main": [
+        [
+          {
+            "node": "AI Lead Score (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Lead Score (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Score JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Score JSON": {
+      "main": [
+        [
+          {
+            "node": "Owner Routing Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Owner Routing Table": {
+      "main": [
+        [
+          {
+            "node": "Resolve Owner ID",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Company (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Owner ID": {
+      "main": [
+        [
+          {
+            "node": "Update Contact Properties",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Contact Properties": {
+      "main": [
+        [
+          {
+            "node": "Create Note with Rationale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Note with Rationale": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,333 @@
+{
+  "name": "auto-generate-sales-collateral-based-on-prospect-needs",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "deal.propertyChange"
+        ]
+      },
+      "id": "sc1",
+      "name": "HubSpot Deal Trigger",
+      "type": "n8n-nodes-base.hubspotTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "hubspotDeveloperApi": {
+          "id": "hubspot_trigger_cred",
+          "name": "HubSpot Trigger OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const stage = $json.body?.propertyName==='dealstage' ? ($json.body?.propertyValue||'') : ''; if(!/presentation|demo|contractsent/i.test(stage)) return []; return [{json:{dealId:$json.body.objectId,stage}}];"
+      },
+      "id": "sc2",
+      "name": "Gate on Relevant Stages",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        330,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "resource": "deal",
+        "dealId": "={{$json.dealId}}"
+      },
+      "id": "sc3",
+      "name": "Fetch Deal",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "hs_object_id",
+                "operation": "EQUAL",
+                "value": "={{$prevNode['Fetch Deal'].json.properties?.associatedcompanyid}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sc4",
+      "name": "Fetch Company",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        780,
+        220
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "resource": "engagement",
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "associatedObjectId",
+                "operation": "EQUAL",
+                "value": "={{$json.dealId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sc5",
+      "name": "Fetch Recent Notes/Calls",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        780,
+        380
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const deal=$prevNode['Fetch Deal'].json;const comp=$prevNode['Fetch Company']?.json;const notes=$prevNode['Fetch Recent Notes/Calls']?.json;return [{json:{deal,company:comp,activities:notes}}];"
+      },
+      "id": "sc6",
+      "name": "Assemble Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You create tailored sales collateral (one-pager). Return JSON {title, problem, solution, productMapping:[{feature, benefit}], roiModel, caseStudySnippet, cta, docMarkdown}."
+          },
+          {
+            "role": "user",
+            "content": "Deal & Company context: {{$json}}"
+          }
+        ]
+      },
+      "id": "sc7",
+      "name": "Generate Collateral (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={title:'One-Pager',docMarkdown:'# One-Pager\\n...'}};const b64=Buffer.from(o.docMarkdown||'# One-Pager').toString('base64');return [{json:o,binary:{file:{data:b64, fileName:(o.title||'One-Pager')+'.md', mimeType:'text/markdown'}}}];"
+      },
+      "id": "sc8",
+      "name": "Prepare Markdown (binary)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "binaryData": "={{$binary.file}}",
+        "options": {
+          "parentId": "sales-collateral-folder-id"
+        }
+      },
+      "id": "sc9",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        1660,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "sales@yourcompany.com",
+        "toEmail": "={{'owner+'+$prevNode['Fetch Deal'].json.properties?.hubspot_owner_id+'@yourcompany.com'}}",
+        "subject": "={{'Collateral ready: '+$prevNode['Prepare Markdown (binary)'].json.title}}",
+        "text": "Tailored one-pager generated and uploaded. Link: {{$prevNode['Upload to Google Drive'].json.webViewLink}}"
+      },
+      "id": "sc10",
+      "name": "Email Sales Owner",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "HubSpot Deal Trigger": {
+      "main": [
+        [
+          {
+            "node": "Gate on Relevant Stages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate on Relevant Stages": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deal": {
+      "main": [
+        [
+          {
+            "node": "Fetch Company",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Recent Notes/Calls",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Company": {
+      "main": [
+        [
+          {
+            "node": "Assemble Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Notes/Calls": {
+      "main": [
+        [
+          {
+            "node": "Assemble Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Collateral (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Collateral (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Markdown (binary)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Markdown (binary)": {
+      "main": [
+        [
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Email Sales Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

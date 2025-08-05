@@ -1,0 +1,65 @@
+{
+  "name": "Template 1935",
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "watch"
+      },
+      "name": "Email Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "ESPN API",
+      "type": "n8n-nodes-base.espnapi",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "ESPN API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 1935
+}

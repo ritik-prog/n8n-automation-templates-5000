@@ -1,0 +1,161 @@
+{
+  "name": "generate-automated-audit-trail-documentation",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 */6 * * *"
+      },
+      "id": "at1",
+      "name": "Every 6 hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/events?since={{encodeURIComponent(new Date(Date.now()-6*3600000).toISOString())}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "at2",
+      "name": "Fetch Accounting Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.erp.example.com/v1/events?since={{encodeURIComponent(new Date(Date.now()-6*3600000).toISOString())}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.erpToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "at3",
+      "name": "Fetch ERP Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst a=($items(0).item.json.events||[]);\nconst e=($items(1).item.json.events||[]);\nconst all=[...a,...e].sort((x,y)=>new Date(x.timestamp)-new Date(y.timestamp));\nlet prev='';\nconst crypto = require('crypto');\nconst out=all.map((ev,i)=>{\n  const data=JSON.stringify(ev);\n  const cur=crypto.createHash('sha256').update(prev+data).digest('hex');\n  prev=cur;\n  return {seq:i+1, ts:ev.timestamp, type:ev.type, actor:ev.actor||'', hash:cur};\n});\nreturn out.map(x=>({json:x}));\n"
+      },
+      "id": "at4",
+      "name": "Normalize & Hash Chain",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "AuditTrail!A1",
+        "fields": [
+          "={{$json.seq}}",
+          "={{$json.ts}}",
+          "={{$json.type}}",
+          "={{$json.actor}}",
+          "={{$json.hash}}"
+        ]
+      },
+      "id": "at5",
+      "name": "Append to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#audit",
+        "text": "\ud83e\udde9 Audit trail appended: last seq {{$json.seq}}"
+      },
+      "id": "at6",
+      "name": "Slack Audit",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Every 6 hours": {
+      "main": [
+        [
+          {
+            "node": "Fetch Accounting Events",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch ERP Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Accounting Events": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Hash Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch ERP Events": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Hash Chain",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

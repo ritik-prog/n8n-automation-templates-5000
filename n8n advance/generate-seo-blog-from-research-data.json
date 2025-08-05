@@ -1,0 +1,149 @@
+{
+  "name": "generate-seo-blog-from-research-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-research-data"
+      },
+      "id": "1",
+      "name": "Upload Research Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "upload-research-blog"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { topic: $json.body.topic, data: $json.body.data } }];"
+      },
+      "id": "2",
+      "name": "Extract Topic & Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an SEO expert and blog writer. Write a 1000-word SEO-optimized blog post based on the topic and data provided. Use markdown, include subheadings, keywords, meta description, and a call-to-action at the end. Respond in JSON with title, metaDescription, keywords, and content."
+          },
+          {
+            "role": "user",
+            "content": "Topic: {{$json.topic}}\n\nData: {{$json.data}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Blog with GPT-4",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const blog = JSON.parse($json.choices[0].message.content); return [{ json: blog }];"
+      },
+      "id": "4",
+      "name": "Parse Blog Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "create",
+        "collection": "seo_blogs",
+        "fields": {
+          "Title": "={{$json.title}}",
+          "Meta Description": "={{$json.metaDescription}}",
+          "Keywords": "={{$json.keywords}}",
+          "Content": "={{$json.content}}"
+        }
+      },
+      "id": "5",
+      "name": "Save to CMS",
+      "type": "n8n-nodes-base.mongodb",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "mongo_credential",
+          "name": "MongoDB CMS"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Upload Research Data": {
+      "main": [
+        [
+          {
+            "node": "Extract Topic & Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Topic & Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Blog with GPT-4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Blog with GPT-4": {
+      "main": [
+        [
+          {
+            "node": "Parse Blog Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Blog Output": {
+      "main": [
+        [
+          {
+            "node": "Save to CMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

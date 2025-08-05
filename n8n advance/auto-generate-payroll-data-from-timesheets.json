@@ -1,0 +1,135 @@
+{
+  "name": "auto-generate-payroll-data-from-timesheets",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 3 * * 5"
+      },
+      "id": "py1",
+      "name": "Weekly Fri 03:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "timesheets-sheet-id",
+        "range": "Timesheets!A2:F999"
+      },
+      "id": "py2",
+      "name": "Load Timesheets (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[]; const out={}; for(const r of rows){ const [email,name,date,hours,rate,ot]=r; if(!email) continue; if(!out[email]) out[email]={name,email,hours:0,ot:0,rate:Number(rate||0)}; out[email].hours+=Number(hours||0); out[email].ot+=Number(ot||0);} return Object.values(out).map(x=>({json:{...x,gross:(x.hours+x.ot*1.5)*x.rate}}));"
+      },
+      "id": "py3",
+      "name": "Aggregate & Compute",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "payroll-sheet-id",
+        "range": "Payroll!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.name}}",
+          "={{$json.hours}}",
+          "={{$json.ot}}",
+          "={{$json.rate}}",
+          "={{$json.gross}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "py4",
+      "name": "Write Payroll (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#finance",
+        "text": "\ud83d\udcb8 Payroll row for {{$json.email}} \u2014 gross {{$json.gross}}"
+      },
+      "id": "py5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Fri 03:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Timesheets (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Timesheets (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Compute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate & Compute": {
+      "main": [
+        [
+          {
+            "node": "Write Payroll (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

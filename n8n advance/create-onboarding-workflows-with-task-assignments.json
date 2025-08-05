@@ -1,0 +1,210 @@
+{
+  "name": "create-onboarding-workflows-with-task-assignments",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "onboarding-start"
+      },
+      "id": "ob1",
+      "name": "New Hire Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; const tasks=[{name:'IT: Laptop & accounts',assignee:b.itOwner||'it@company.com'},{name:'HR: Paperwork & payroll',assignee:b.hrOwner||'hr@company.com'},{name:'Manager: 30-60-90 plan',assignee:b.managerEmail},{name:'Buddy: Intro & tour',assignee:b.buddyEmail||b.managerEmail}]; return [{json:{employee:{name:b.name,email:b.email,startDate:b.startDate,role:b.role,manager:b.managerEmail},tasks}}];"
+      },
+      "id": "ob2",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const t=$json.tasks||[];return t.map(x=>({json:{name:x.name, assignee:x.assignee, notes:`Onboard ${$json.employee.name} (${ $json.employee.role})`, due:$json.employee.startDate}}));"
+      },
+      "id": "ob3",
+      "name": "Fan-out Tasks",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "task",
+        "workspace": "asana-workspace-id",
+        "name": "={{$json.name}}",
+        "additionalFields": {
+          "assignee": "={{$json.assignee}}",
+          "notes": "={{$json.notes}}",
+          "dueOn": "={{$json.due}}",
+          "projects": [
+            "onboarding-project-id"
+          ]
+        }
+      },
+      "id": "ob4",
+      "name": "Create Asana Task",
+      "type": "n8n-nodes-base.asana",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "asanaApi": {
+          "id": "asana_cred",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#onboarding",
+        "text": "Created onboarding task: {{$json.name}} \u2192 {{$json.assignee}}"
+      },
+      "id": "ob5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleapisToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "summary": "={{'Orientation for '+$prevNode['Normalize Payload'].json.employee.name}}",
+          "start": {
+            "date": "={{$prevNode['Normalize Payload'].json.employee.startDate}}"
+          },
+          "end": {
+            "date": "={{$prevNode['Normalize Payload'].json.employee.startDate}}"
+          },
+          "attendees": [
+            {
+              "email": "={{$prevNode['Normalize Payload'].json.employee.email}}"
+            },
+            {
+              "email": "={{$prevNode['Normalize Payload'].json.employee.manager}}"
+            }
+          ]
+        }
+      },
+      "id": "ob6",
+      "name": "Schedule Orientation (GCal)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "onboarding@yourcompany.com",
+        "toEmail": "={{$prevNode['Normalize Payload'].json.employee.email}}",
+        "subject": "Welcome to the team!",
+        "text": "Hi {{$prevNode['Normalize Payload'].json.employee.name}},\\nWe\u2019ve created your onboarding tasks and scheduled orientation. Check Slack and calendar invites.\\n\u2014 People Ops"
+      },
+      "id": "ob7",
+      "name": "Welcome Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "New Hire Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Fan-out Tasks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Schedule Orientation (GCal)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan-out Tasks": {
+      "main": [
+        [
+          {
+            "node": "Create Asana Task",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

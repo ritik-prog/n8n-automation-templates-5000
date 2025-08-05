@@ -1,0 +1,103 @@
+{
+  "name": "Create ad campaign from Product launch doc and send to Mailchimp",
+  "nodes": [
+    {
+      "id": "trigger-product-launch-doc",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        69000
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-ad-campaign-from-product-launch-doc-and-send-to-mailchimp",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-product-launch-doc",
+      "name": "Fetch data from Product launch doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        69000
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/product-launch-doc",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-mailchimp",
+      "name": "Send to Mailchimp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        69000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/mailchimp",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-69000",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        69000
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Product launch doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Product launch doc": {
+      "main": [
+        {
+          "node": "Send to Mailchimp",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Mailchimp": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

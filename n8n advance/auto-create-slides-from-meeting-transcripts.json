@@ -1,0 +1,148 @@
+{
+  "name": "auto-create-slides-from-meeting-transcripts",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-meeting-transcript"
+      },
+      "id": "1",
+      "name": "Meeting Transcript Upload",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "meeting-slide-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { transcript: $json.body.transcript } }];"
+      },
+      "id": "2",
+      "name": "Extract Transcript",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a presentation designer. Summarize this meeting into 5\u20137 slides. Each slide should have a title and 3\u20135 bullet points. Return a JSON array with slideTitle and bulletPoints."
+          },
+          {
+            "role": "user",
+            "content": "Transcript:\n{{$json.transcript}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Slides (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const slides = JSON.parse($json.choices[0].message.content); return slides.map(s => ({ json: s }));"
+      },
+      "id": "4",
+      "name": "Parse Slide Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "slide-sheet-id",
+        "range": "Slides!A1",
+        "fields": [
+          "={{$json.slideTitle}}",
+          "={{$json.bulletPoints.join('\\n')}}"
+        ]
+      },
+      "id": "5",
+      "name": "Append to Slides Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Meeting Transcript Upload": {
+      "main": [
+        [
+          {
+            "node": "Extract Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transcript": {
+      "main": [
+        [
+          {
+            "node": "Generate Slides (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Slides (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Slide Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Slide Data": {
+      "main": [
+        [
+          {
+            "node": "Append to Slides Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

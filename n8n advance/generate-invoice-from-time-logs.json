@@ -1,0 +1,150 @@
+{
+  "name": "generate-invoice-from-time-logs",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-time-logs"
+      },
+      "id": "1",
+      "name": "Time Log Upload Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "time-log-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { project: $json.body.project, client: $json.body.client, logs: $json.body.logs } }];"
+      },
+      "id": "2",
+      "name": "Extract Time Log Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a finance assistant. Based on the provided project time logs, generate a clean, professional invoice summary. Include project name, hours worked per task, total hours, and a human-friendly summary. Respond in JSON: {summaryText, taskBreakdown, totalHours}"
+          },
+          {
+            "role": "user",
+            "content": "Project: {{$json.project}}\n\nTime Logs:\n{{$json.logs}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Invoice Summary (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const invoice = JSON.parse($json.choices[0].message.content); return [{ json: invoice }];"
+      },
+      "id": "4",
+      "name": "Parse Invoice Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "create",
+        "collection": "invoices",
+        "fields": {
+          "Project": "={{$json.project}}",
+          "Client": "={{$json.client}}",
+          "Summary": "={{$json.summaryText}}",
+          "Tasks": "={{$json.taskBreakdown}}",
+          "TotalHours": "={{$json.totalHours}}"
+        }
+      },
+      "id": "5",
+      "name": "Save to Invoice DB",
+      "type": "n8n-nodes-base.mongodb",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "mongo_credential",
+          "name": "MongoDB"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Time Log Upload Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Time Log Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Time Log Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Invoice Summary (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Invoice Summary (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Invoice Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Invoice Summary": {
+      "main": [
+        [
+          {
+            "node": "Save to Invoice DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

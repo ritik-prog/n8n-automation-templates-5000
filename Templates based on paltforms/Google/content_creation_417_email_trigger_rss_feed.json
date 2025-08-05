@@ -1,0 +1,65 @@
+{
+  "name": "Template 417",
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "watch"
+      },
+      "name": "Email Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "RSS Feed",
+      "type": "n8n-nodes-base.rssfeed",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "RSS Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 417
+}

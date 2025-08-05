@@ -1,0 +1,227 @@
+{
+  "name": "generate-personalized-travel-itineraries-from-preferences",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "travel-preferences"
+      },
+      "id": "1",
+      "name": "Travel Preferences Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "travel-preferences-intake"
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst prefs = $json.body || {}; // {destination, startDate, endDate, budget, interests[], pace, dietary, travelers}\nreturn [{ json: { prefs } }];\n"
+      },
+      "id": "2",
+      "name": "Extract Preferences",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.5,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a travel planner. Create a day-by-day itinerary with activities, suggested times, reservations (if any), estimated costs, travel between spots, dining options (respecting dietary), and safety notes. Return JSON {summary, budget:{estimatedTotal, perDay}, days:[{date, items:[{time, title, details, location, costEstimate}]}]}."
+          },
+          {
+            "role": "user",
+            "content": "Preferences: {{$json.prefs}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Itinerary (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        580,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet out; try { out = JSON.parse($json.choices[0].message.content); } catch(e){ out = { days:[], summary:'' }; }\nreturn [{ json: out }];\n"
+      },
+      "id": "4",
+      "name": "Parse Itinerary JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        820,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst days = $json.days || [];\nconst events = [];\nfor (const d of days) {\n  for (const item of (d.items||[])) {\n    const datePart = (d.date||'').slice(0,10);\n    const start = datePart + 'T' + ((item.time||'09:00')+':00').replace(/(\\d{2}:\\d{2})(:\\d{2})?$/, '$1:00');\n    events.push({ json: { start, end: start, title: item.title, description: item.details + `\\nCost ~ ${item.costEstimate||'n/a'}`, location: item.location||'' } });\n  }\n}\nreturn events;\n"
+      },
+      "id": "5",
+      "name": "Itinerary \u2192 Calendar Items",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "calendar": "primary",
+        "start": "={{$json.start}}",
+        "end": "={{$json.end}}",
+        "summary": "={{$json.title}}",
+        "description": "={{$json.description}}",
+        "location": "={{$json.location}}"
+      },
+      "id": "6",
+      "name": "Create Calendar Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        300
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "gcal_cred",
+          "name": "Google Calendar"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "notion-travel-db-id",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "Itinerary - {{$now}}"
+                }
+              }
+            ]
+          },
+          "Summary": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.summary}}"
+                }
+              }
+            ]
+          },
+          "Budget": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{JSON.stringify($json.budget||{})}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "7",
+      "name": "Create Notion Itinerary Page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        820,
+        460
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_credential",
+          "name": "Notion API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Travel Preferences Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Preferences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Preferences": {
+      "main": [
+        [
+          {
+            "node": "Generate Itinerary (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Itinerary (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Itinerary JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Itinerary JSON": {
+      "main": [
+        [
+          {
+            "node": "Itinerary \u2192 Calendar Items",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Notion Itinerary Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Itinerary \u2192 Calendar Items": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

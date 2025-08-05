@@ -1,0 +1,234 @@
+{
+  "name": "auto-create-job-descriptions-from-skill-requirements",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "skill-requirements"
+      },
+      "id": "1",
+      "name": "Webhook (HR Input)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        120,
+        320
+      ],
+      "webhookId": "skill-req-in"
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst role = $json.body?.role || '';\nconst level = $json.body?.level || '';\nconst skills = $json.body?.skills || [];\nconst benefits = $json.body?.benefits || [];\nconst location = $json.body?.location || 'Remote';\nreturn [{ json: { role, level, skills, benefits, location } }];\n"
+      },
+      "id": "2",
+      "name": "Extract HR Fields",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        360,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a senior HR copywriter. Draft a clear, unbiased job description including sections: Overview, Responsibilities, Requirements, Nice-to-Haves, Benefits, About Company, How to Apply. Return JSON {title, overview, responsibilities, requirements, niceToHaves, benefits, applyInstructions}."
+          },
+          {
+            "role": "user",
+            "content": "Role: {{$json.role}} ({{$json.level}})\\nSkills: {{$json.skills}}\\nBenefits: {{$json.benefits}}\\nLocation: {{$json.location}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate JD (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        600,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet jd; try { jd = JSON.parse($json.choices[0].message.content); } catch(e){ jd = { title:'Draft', overview:'', responsibilities:[], requirements:[], niceToHaves:[], benefits:[], applyInstructions:'' }; }\nreturn [{ json: jd }];\n"
+      },
+      "id": "4",
+      "name": "Parse JD JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        840,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "your-notion-jobs-db-id",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "={{$json.title}}"
+                }
+              }
+            ]
+          },
+          "Overview": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.overview}}"
+                }
+              }
+            ]
+          },
+          "Responsibilities": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.responsibilities?.join('\\n- ')}}"
+                }
+              }
+            ]
+          },
+          "Requirements": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.requirements?.join('\\n- ')}}"
+                }
+              }
+            ]
+          },
+          "NiceToHaves": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.niceToHaves?.join('\\n- ')}}"
+                }
+              }
+            ]
+          },
+          "Benefits": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.benefits?.join('\\n- ')}}"
+                }
+              }
+            ]
+          },
+          "Apply": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.applyInstructions}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "5",
+      "name": "Create Notion Job Page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        260
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_credential",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#hiring",
+        "text": "*New JD Draft:* {{$json.title}} ({{$json.location}})\\nKey Requirements:\\n- {{$json.requirements?.slice(0,3).join('\\n- ')}}"
+      },
+      "id": "6",
+      "name": "Announce on Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        420
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "slack_credential",
+          "name": "Slack Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook (HR Input)": {
+      "main": [
+        [
+          {
+            "node": "Extract HR Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract HR Fields": {
+      "main": [
+        [
+          {
+            "node": "Generate JD (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate JD (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse JD JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JD JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Job Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Announce on Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

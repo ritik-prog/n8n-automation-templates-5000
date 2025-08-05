@@ -1,0 +1,103 @@
+{
+  "name": "Schedule time from Todoist task and send to Slack",
+  "nodes": [
+    {
+      "id": "trigger-todoist-task",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        181000
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "schedule-time-from-todoist-task-and-send-to-slack",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-todoist-task",
+      "name": "Fetch data from Todoist task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        181000
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/todoist-task",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        181000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/slack",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-181000",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        181000
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Todoist task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Todoist task": {
+      "main": [
+        {
+          "node": "Send to Slack",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Slack": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

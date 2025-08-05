@@ -1,0 +1,103 @@
+{
+  "name": "Escalate priority from Zendesk ticket and send to Notion",
+  "nodes": [
+    {
+      "id": "trigger-zendesk-ticket",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        82900
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "escalate-priority-from-zendesk-ticket-and-send-to-notion",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-zendesk-ticket",
+      "name": "Fetch data from Zendesk ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        82900
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/zendesk-ticket",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-notion",
+      "name": "Send to Notion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        82900
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/notion",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-82900",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        82900
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Zendesk ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Zendesk ticket": {
+      "main": [
+        {
+          "node": "Send to Notion",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Notion": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

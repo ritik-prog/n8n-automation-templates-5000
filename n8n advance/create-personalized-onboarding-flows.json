@@ -1,0 +1,146 @@
+{
+  "name": "create-personalized-onboarding-flows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "user-onboarding-profile"
+      },
+      "id": "1",
+      "name": "User Profile Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "onboarding-profile-hook"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { name: $json.body.name, role: $json.body.role, experience: $json.body.experience, goals: $json.body.goals } }];"
+      },
+      "id": "2",
+      "name": "Extract User Info",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a product coach creating a custom onboarding flow. Based on user details, create a JSON plan with 3 onboarding stages: Getting Started, Setup, and Role-Specific Features. Each stage should have title, description, and checklist."
+          },
+          {
+            "role": "user",
+            "content": "Name: {{$json.name}}\nRole: {{$json.role}}\nExperience: {{$json.experience}}\nGoals: {{$json.goals}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Flow with GPT-4",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const plan = JSON.parse($json.choices[0].message.content); return [{ json: plan }];"
+      },
+      "id": "4",
+      "name": "Parse Onboarding Plan",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "send",
+        "fromEmail": "onboarding@yourcompany.com",
+        "toEmail": "={{$json.email || 'user@example.com'}}",
+        "subject": "Your Personalized Onboarding Journey",
+        "text": "Welcome! Here's your personalized onboarding:\n\nGetting Started:\n{{$json.GettingStarted.description}}\n\nChecklist: {{$json.GettingStarted.checklist}}\n\n---\n\nSetup:\n{{$json.Setup.description}}\n\nChecklist: {{$json.Setup.checklist}}\n\n---\n\nRole-Specific Features:\n{{$json.RoleSpecificFeatures.description}}\n\nChecklist: {{$json.RoleSpecificFeatures.checklist}}"
+      },
+      "id": "5",
+      "name": "Send Onboarding Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_credential",
+          "name": "SMTP Mailer"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "User Profile Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract User Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract User Info": {
+      "main": [
+        [
+          {
+            "node": "Generate Flow with GPT-4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Flow with GPT-4": {
+      "main": [
+        [
+          {
+            "node": "Parse Onboarding Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Onboarding Plan": {
+      "main": [
+        [
+          {
+            "node": "Send Onboarding Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

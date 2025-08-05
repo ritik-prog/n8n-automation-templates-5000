@@ -1,0 +1,429 @@
+{
+  "name": "auto-deploy-code-changes-and-notify-teams-of-status",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "deploy-trigger"
+      },
+      "id": "d1",
+      "name": "CI Trigger Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b=$json.body||$json;\nconst ref=b.ref||b.branch||'main';\nconst service=b.service||'web';\nconst env=(b.environment||'production').toLowerCase();\nconst sha=b.sha||b.commit||'';\nconst version=b.version||sha.slice(0,7)||('build-'+Date.now());\nreturn [{json:{ref,service,env,sha,version,initiator:b.user||b.actor||'system'}}];\n"
+      },
+      "id": "d2",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.github.com/repos/org/{{$json.service}}/dispatches",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "token {{$credentials.githubToken}}"
+              },
+              {
+                "name": "Accept",
+                "value": "application/vnd.github+json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "event_type": "deploy",
+          "client_payload": {
+            "ref": "={{$json.ref}}",
+            "environment": "={{$json.env}}",
+            "sha": "={{$json.sha}}",
+            "version": "={{$json.version}}"
+          }
+        }
+      },
+      "id": "d3",
+      "name": "Kickoff GitHub Actions (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        560,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://gitlab.example.com/api/v4/projects/123/trigger/pipeline",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "PRIVATE-TOKEN",
+                "value": "{{$credentials.gitlabToken}}"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "ref": "={{$json.ref}}",
+          "token": "={{$credentials.gitlabTriggerToken}}",
+          "variables": {
+            "ENV": "={{$json.env}}",
+            "SERVICE": "={{$json.service}}",
+            "VERSION": "={{$json.version}}"
+          }
+        }
+      },
+      "id": "d3b",
+      "name": "Kickoff GitLab Pipeline (optional)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        560,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Create a rollout plan (canary->full) for UI and Slack\nconst env=$json.env; const service=$json.service; const version=$json.version;\nconst plan=[{phase:'canary', percent:10, waitMins:10},{phase:'ramp', percent:50, waitMins:15},{phase:'full', percent:100, waitMins:0}];\nreturn [{json:{service,env,version,plan}}];\n"
+      },
+      "id": "d4",
+      "name": "Build Rollout Plan",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        780,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#deploys",
+        "text": "\ud83d\ude80 Deploy {{$json.service}} {{$json.version}} to {{$json.env}} started. Phases: {{$json.plan.map(p=>p.phase+':'+p.percent+'%').join(' \u2192 ')}}"
+      },
+      "id": "d5",
+      "name": "Notify Start (Slack)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://cd.example.com/api/rollout",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.cdToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "service": "={{$json.service}}",
+          "environment": "={{$json.env}}",
+          "version": "={{$json.version}}",
+          "plan": "={{$json.plan}}"
+        }
+      },
+      "id": "d6",
+      "name": "Start Rollout (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://cd.example.com/api/status?service={{$json.service}}&env={{$json.env}}&version={{$json.version}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.cdToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "d7",
+      "name": "Poll Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Decide success/rollback based on status payload\nconst s=$json||{};\nconst ok = (s.state||'').toLowerCase()==='succeeded' || s.success===true;\nconst err = (s.state||'').toLowerCase()==='failed' || s.error;\nreturn [{json:{ok, message:s.message||'', errors:s.errors||[], metrics:s.metrics||{} }}];\n"
+      },
+      "id": "d8",
+      "name": "Evaluate Status",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.ok}}"
+            }
+          ]
+        }
+      },
+      "id": "d9",
+      "name": "IF Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#deploys",
+        "text": "\u2705 Deploy succeeded. Metrics: {{$json.metrics ? JSON.stringify($json.metrics) : 'n/a'}}"
+      },
+      "id": "d10",
+      "name": "Notify Success",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://cd.example.com/api/rollback",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.cdToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "service": "={{$prevNode['Normalize Payload'].json.service}}",
+          "environment": "={{$prevNode['Normalize Payload'].json.env}}",
+          "version": "={{$prevNode['Normalize Payload'].json.version}}"
+        }
+      },
+      "id": "d11",
+      "name": "Rollback (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#deploys",
+        "text": "\u274c Deploy failed. Rollback initiated. Errors: {{$json.errors ? JSON.stringify($json.errors) : 'n/a'}}"
+      },
+      "id": "d12",
+      "name": "Notify Failure",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "issue",
+        "projectKey": "OPS",
+        "summary": "={{'Deployment '+$prevNode['Normalize Payload'].json.service+' '+$prevNode['Normalize Payload'].json.version+' to '+$prevNode['Normalize Payload'].json.env}}",
+        "description": "={{'Status: '+($json.ok?'SUCCESS':'FAILURE')+'\\nDetails: '+($json.message||'') }}",
+        "additionalFields": {
+          "issuetype": {
+            "name": "Task"
+          }
+        }
+      },
+      "id": "d13",
+      "name": "Create Jira Task",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        300
+      ],
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "jira_cred",
+          "name": "Jira Cloud"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "CI Trigger Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Kickoff GitHub Actions (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Kickoff GitLab Pipeline (optional)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Rollout Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rollout Plan": {
+      "main": [
+        [
+          {
+            "node": "Notify Start (Slack)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Start Rollout (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Rollout (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Poll Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Status": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Status": {
+      "main": [
+        [
+          {
+            "node": "IF Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Notify Success",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Jira Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rollback (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Failure",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Jira Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

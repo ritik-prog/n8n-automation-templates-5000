@@ -1,0 +1,181 @@
+{
+  "name": "generate-knowledge-base-articles-from-resolved-tickets",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 * * * *"
+      },
+      "id": "kb1",
+      "name": "Hourly",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets?status=resolved&updated_since={{encodeURIComponent(new Date(Date.now()-3600000).toISOString())}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "kb2",
+      "name": "Fetch Resolved Tickets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const items=$json.tickets||$json||[]; return (Array.isArray(items)?items:[items]).map(t=>({json:{id:t.id,subject:t.subject,solution:t.solution||t.publicReply||'',tags:t.tags||[]}}));"
+      },
+      "id": "kb3",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Convert support resolution into a KB article with sections: Overview, Symptoms, Steps, FAQ. Return JSON {title, articleMarkdown, tags[]}."
+          },
+          {
+            "role": "user",
+            "content": "Subject: {{$json.subject}}\\nResolution: {{$json.solution}}\\nTags: {{$json.tags}}"
+          }
+        ]
+      },
+      "id": "kb4",
+      "name": "AI Draft KB",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o={title:'KB Draft',articleMarkdown:'',tags:[]}; try{o=JSON.parse($json.choices[0].message.content)}catch(e){} return [{json:o}];"
+      },
+      "id": "kb5a",
+      "name": "Extract KB JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "kb-sheet-id",
+        "range": "Drafts!A1",
+        "fields": [
+          "={{$json.title}}",
+          "={{$json.articleMarkdown}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "kb6",
+      "name": "Save KB to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Hourly": {
+      "main": [
+        [
+          {
+            "node": "Fetch Resolved Tickets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Resolved Tickets": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "AI Draft KB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Draft KB": {
+      "main": [
+        [
+          {
+            "node": "Extract KB JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract KB JSON": {
+      "main": [
+        [
+          {
+            "node": "Save KB to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

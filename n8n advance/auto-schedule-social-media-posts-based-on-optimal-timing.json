@@ -1,0 +1,209 @@
+{
+  "name": "auto-schedule-social-media-posts-based-on-optimal-timing",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 8 * * *"
+      },
+      "id": "ss1",
+      "name": "Daily 08:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "social-content-sheet-id",
+        "range": "Queue!A2:E999"
+      },
+      "id": "ss2",
+      "name": "Read Content Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "social-content-sheet-id",
+        "range": "BestTimes!A2:C50"
+      },
+      "id": "ss3",
+      "name": "Read Best Times",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const queue=$items().find(i=>i.node.name==='Read Content Queue')?.json?.rows||[];const times=$items().find(i=>i.node.name==='Read Best Times')?.json?.rows||[];const map={};for(const r of times){map[r[0]]={hour:Number(r[1]), tz:r[2]||'UTC'};}const out=[];for(const q of queue){const [id,channel,text,link,status]=q; if((status||'').toLowerCase()==='scheduled') continue; const cfg=map[channel]||{hour:9,tz:'UTC'}; const when=new Date(); when.setUTCHours(cfg.hour,0,0,0); out.push({json:{id,channel,text,link,when:when.toISOString(),tz:cfg.tz}});}return out;"
+      },
+      "id": "ss4",
+      "name": "Pick Times",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.bufferapp.com/1/updates/create.json",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.bufferToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "text": "={{$json.text+' '+($json.link||'')}}",
+          "profile_ids": [
+            "{{$credentials.bufferProfileId}}"
+          ],
+          "scheduled_at": "={{$json.when}}",
+          "shorten": true
+        }
+      },
+      "id": "ss5",
+      "name": "Schedule via Buffer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "social-content-sheet-id",
+        "range": "Queue!E:E",
+        "options": {
+          "valueInputMode": "RAW"
+        },
+        "updateAll": true,
+        "value": "scheduled"
+      },
+      "id": "ss6",
+      "name": "Mark as Scheduled",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#social",
+        "text": "Scheduled {{$json.channel}} post for {{$json.when}}"
+      },
+      "id": "ss7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 08:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Read Content Queue",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Best Times",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Best Times": {
+      "main": [
+        [
+          {
+            "node": "Pick Times",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Content Queue": {
+      "main": [
+        [
+          {
+            "node": "Pick Times",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Times": {
+      "main": [
+        [
+          {
+            "node": "Schedule via Buffer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mark as Scheduled",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

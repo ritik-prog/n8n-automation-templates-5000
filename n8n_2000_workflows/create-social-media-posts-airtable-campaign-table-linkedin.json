@@ -1,0 +1,103 @@
+{
+  "name": "Create social media posts from Airtable campaign table and send to LinkedIn",
+  "nodes": [
+    {
+      "id": "trigger-airtable-campaign-table",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        74400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-social-media-posts-from-airtable-campaign-table-and-send-to-linkedin",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-airtable-campaign-table",
+      "name": "Fetch data from Airtable campaign table",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        74400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/airtable-campaign-table",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-linkedin",
+      "name": "Send to LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        74400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/linkedin",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-74400",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        74400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Airtable campaign table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Airtable campaign table": {
+      "main": [
+        {
+          "node": "Send to LinkedIn",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

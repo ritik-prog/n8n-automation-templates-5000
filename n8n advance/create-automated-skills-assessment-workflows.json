@@ -1,0 +1,212 @@
+{
+  "name": "create-automated-skills-assessment-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "skills-init"
+      },
+      "id": "sa1",
+      "name": "Assessment Init Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{email:b.email,name:b.name,role:b.role,assessment:b.assessment||'General',deadline:b.deadline||new Date(Date.now()+7*86400000).toISOString().slice(0,10)}}];"
+      },
+      "id": "sa2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "learning@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Skill assessment assigned: {{$json.assessment}}",
+        "text": "Hi {{$json.name}},\\nPlease complete your {{$json.assessment}} by {{$json.deadline}}: https://assess.yourcompany.com?e={{encodeURIComponent($json.email)}}\\n\u2014 L&D"
+      },
+      "id": "sa3",
+      "name": "Email Employee",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "skills-response"
+      },
+      "id": "sa4",
+      "name": "Response Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{email:b.email,scores:b.scores||{},freeText:b.freeText||''}}];"
+      },
+      "id": "sa5",
+      "name": "Normalize Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create a learning plan from skills scores. Return JSON {strengths:[...], gaps:[...], plan:[{topic,resource,deadline}], summary}."
+          },
+          {
+            "role": "user",
+            "content": "{{$json}}"
+          }
+        ]
+      },
+      "id": "sa6",
+      "name": "AI Learning Plan",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        520
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "learning-sheet-id",
+        "range": "Assessments!A1",
+        "fields": [
+          "={{$prevNode['Normalize Response'].json.email}}",
+          "={{$json.summary}}",
+          "={{JSON.stringify($json.plan)}}",
+          "={{($json.strengths||[]).join(', ')}}",
+          "={{($json.gaps||[]).join(', ')}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "sa7",
+      "name": "Log (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        520
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#learning",
+        "text": "\ud83d\udcda Learning plan generated for {{$prevNode['Normalize Response'].json.email}}"
+      },
+      "id": "sa8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Assessment Init Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Employee",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Response": {
+      "main": [
+        [
+          {
+            "node": "AI Learning Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Learning Plan": {
+      "main": [
+        [
+          {
+            "node": "Log (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

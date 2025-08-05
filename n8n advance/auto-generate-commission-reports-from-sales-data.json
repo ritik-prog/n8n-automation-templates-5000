@@ -1,0 +1,194 @@
+{
+  "name": "auto-generate-commission-reports-from-sales-data",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 1 * *"
+      },
+      "id": "cr1",
+      "name": "Monthly 1st 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "id": "cr2",
+      "name": "Fetch Deals (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "111111",
+              "value": "0.10"
+            },
+            {
+              "name": "222222",
+              "value": "0.12"
+            },
+            {
+              "name": "333333",
+              "value": "0.08"
+            }
+          ]
+        }
+      },
+      "id": "cr3",
+      "name": "Commission Rates Table",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        540,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const deals=Array.isArray($json)?$json:[$json];const lastMonth=new Date();lastMonth.setMonth(lastMonth.getMonth()-1);lastMonth.setDate(1);const nextMonth=new Date(lastMonth);nextMonth.setMonth(nextMonth.getMonth()+1);const rows={};for(const d of deals){const stage=(d.properties?.dealstage||'').toLowerCase();if(!stage.includes('closedwon')) continue;const cd=new Date(d.properties?.closedate||0);if(!(cd>=lastMonth && cd<nextMonth)) continue;const owner=d.properties?.hubspot_owner_id||'unknown';const amount=Number(d.properties?.amount||0);const rate=parseFloat($prevNode['Commission Rates Table'].json[owner]||'0.1');const com=+(amount*rate).toFixed(2); if(!rows[owner]) rows[owner]={amount:0,commission:0,count:0,rate}; rows[owner].amount+=amount; rows[owner].commission+=com; rows[owner].count+=1;} const out=Object.entries(rows).map(([owner,v])=>({json:{owner,rate:v.rate,totalAmount:+v.amount.toFixed(2),totalCommission:+v.commission.toFixed(2),deals:v.count}})); return out;"
+      },
+      "id": "cr4",
+      "name": "Compute Commissions",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "commission-reports-sheet-id",
+        "range": "Monthly!A1",
+        "fields": [
+          "={{$json.owner}}",
+          "={{$json.rate}}",
+          "={{$json.totalAmount}}",
+          "={{$json.totalCommission}}",
+          "={{$json.deals}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "cr5",
+      "name": "Write to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "finance@yourcompany.com",
+        "toEmail": "cfo@yourcompany.com",
+        "subject": "Monthly Commission Report Ready",
+        "text": "Commission totals have been posted to Sheets."
+      },
+      "id": "cr6",
+      "name": "Email Finance",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monthly 1st 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deals (HubSpot)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Commission Rates Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deals (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Compute Commissions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commission Rates Table": {
+      "main": [
+        [
+          {
+            "node": "Compute Commissions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Commissions": {
+      "main": [
+        [
+          {
+            "node": "Write to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Email Finance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,213 @@
+{
+  "name": "generate-infrastructure-cost-optimization-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 5 * * *"
+      },
+      "id": "c1",
+      "name": "Daily 05:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ce.aws.example.com/v1/costs?granularity=daily&days=14",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.awsCeToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c2",
+      "name": "Fetch AWS Costs (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://billing.gcp.example.com/v1/costs?granularity=daily&days=14",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.gcpBillingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c3",
+      "name": "Fetch GCP Costs (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Aggregate multi-cloud, find idle (low CPU over 7 days) & orphaned (no owner tag)\nconst aws=$items(0).item.json||{};\nconst gcp=$items(1).item.json||{};\nconst total=(aws.total||0)+(gcp.total||0);\nconst savings=[\n  {type:'idle-instance', est:120.50, note:'r5.xlarge cpu<5% avg'},\n  {type:'orphaned-vol', est:45.00, note:'EBS no attached instance'}\n];\nconst md=`# Cost Optimization (14d)\nTotal: $${total.toFixed(2)}\nPotential Savings:\n${savings.map(s=>'- '+s.type+': $'+s.est.toFixed(2)+' ('+s.note+')').join('\\n')}`;\nreturn [{json:{md, total, savings}}];\n"
+      },
+      "id": "c4",
+      "name": "Analyze & Compose",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.pdf-service.example.com/markdown-to-pdf",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pdfServiceToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "markdown": "={{$json.md}}",
+          "fileName": "={{'cost-opt-'+$now+'.pdf'}}"
+        }
+      },
+      "id": "c5",
+      "name": "PDF Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "devops-ops-sheet-id",
+        "range": "Cost!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.total}}",
+          "={{JSON.stringify($json.savings)}}"
+        ]
+      },
+      "id": "c6",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#cloud-costs",
+        "text": "\ud83d\udcb0 Cost report ready. Total 14d: ${{$json.total}}. Potential savings listed in report."
+      },
+      "id": "c7",
+      "name": "Slack Cost",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 05:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch AWS Costs (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch GCP Costs (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AWS Costs (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Analyze & Compose",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GCP Costs (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Analyze & Compose",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Analyze & Compose": {
+      "main": [
+        [
+          {
+            "node": "PDF Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Cost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

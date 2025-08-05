@@ -1,0 +1,103 @@
+{
+  "name": "Qualify lead from Web form and send to Pipedrive",
+  "nodes": [
+    {
+      "id": "trigger-web-form",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        47700
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "qualify-lead-from-web-form-and-send-to-pipedrive",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-web-form",
+      "name": "Fetch data from Web form",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        47700
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/web-form",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-pipedrive",
+      "name": "Send to Pipedrive",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        47700
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/pipedrive",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-47700",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        47700
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Web form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Web form": {
+      "main": [
+        {
+          "node": "Send to Pipedrive",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Pipedrive": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

@@ -1,0 +1,103 @@
+{
+  "name": "Send order confirmation from Shopify order and send to Warehouse system",
+  "nodes": [
+    {
+      "id": "trigger-shopify-order",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        170300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-order-confirmation-from-shopify-order-and-send-to-warehouse-system",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-shopify-order",
+      "name": "Fetch data from Shopify order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        170300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/shopify-order",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-warehouse-system",
+      "name": "Send to Warehouse system",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        170300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/warehouse-system",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-170300",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        170300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Shopify order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Shopify order": {
+      "main": [
+        {
+          "node": "Send to Warehouse system",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Warehouse system": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

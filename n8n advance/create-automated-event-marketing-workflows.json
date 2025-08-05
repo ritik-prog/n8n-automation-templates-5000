@@ -1,0 +1,274 @@
+{
+  "name": "create-automated-event-marketing-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "event-create"
+      },
+      "id": "em1",
+      "name": "Event Brief Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{name:b.name,date:b.date,desc:b.description||'',speakers:b.speakers||[],regUrl:b.registrationUrl||''}}];"
+      },
+      "id": "em2",
+      "name": "Normalize Event Brief",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.25,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create event assets: landing copy, email invite, and social posts. Return JSON {landing:{title,hero,bullets:[...]}, email:{subject,html}, social:[{channel,text}] }."
+          },
+          {
+            "role": "user",
+            "content": "Event {{$json.name}} on {{$json.date}} \u2014 {{$json.desc}}. Speakers: {{$json.speakers}}. Registration {{$json.regUrl}}"
+          }
+        ]
+      },
+      "id": "em3",
+      "name": "Generate Assets (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let a;try{a=JSON.parse($json.choices[0].message.content)}catch(e){a={landing:{title:'Event',hero:'Join us',bullets:[]},email:{subject:'Join',html:'<p>Join us</p>'},social:[]}};return [{json:a}];"
+      },
+      "id": "em4",
+      "name": "Parse Assets JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.webflow.com/collections/{{$credentials.webflowCollectionId}}/items",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.webflowToken}}"
+              },
+              {
+                "name": "accept-version",
+                "value": "1.0.0"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "fields": {
+            "name": "={{$json.landing.title}}",
+            "slug": "={{$json.landing.title.toLowerCase().replace(/[^a-z0-9]+/g,'-')}}",
+            "_draft": false,
+            "_archived": false,
+            "rich_content": "={{'<h1>'+ $json.landing.hero +'</h1><ul>'+($json.landing.bullets||[]).map(x=>'<li>'+x+'</li>').join('')+'</ul>'}}",
+            "event_date": "={{$prevNode['Normalize Event Brief'].json.date}}",
+            "reg_url": "={{$prevNode['Normalize Event Brief'].json.regUrl}}"
+          }
+        }
+      },
+      "id": "em5",
+      "name": "Create Landing (Webflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://usX.api.mailchimp.com/3.0/campaigns",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.mailchimpToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "type": "regular",
+          "recipients": {
+            "list_id": "{{$credentials.mailchimpListId}}"
+          },
+          "settings": {
+            "subject_line": "={{$json.email.subject}}",
+            "from_name": "Marketing",
+            "reply_to": "events@yourcompany.com"
+          }
+        }
+      },
+      "id": "em6",
+      "name": "Create Email Campaign",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json._links ? $json._links.find(l=>l.rel==='content')?.href : ''}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.mailchimpToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "html": "={{$prevNode['Parse Assets JSON'].json.email.html}}",
+          "plain_text": ""
+        }
+      },
+      "id": "em7",
+      "name": "Set Email Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#events",
+        "text": "Event assets created for {{$prevNode['Normalize Event Brief'].json.name}}"
+      },
+      "id": "em8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Event Brief Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Event Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Event Brief": {
+      "main": [
+        [
+          {
+            "node": "Generate Assets (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Assets (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Assets JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Assets JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Landing (Webflow)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Email Campaign",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Email Campaign": {
+      "main": [
+        [
+          {
+            "node": "Set Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

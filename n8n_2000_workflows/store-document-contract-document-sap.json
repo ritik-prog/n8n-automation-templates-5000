@@ -1,0 +1,103 @@
+{
+  "name": "Store document from Contract document and send to SAP",
+  "nodes": [
+    {
+      "id": "trigger-contract-document",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        162800
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "store-document-from-contract-document-and-send-to-sap",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-contract-document",
+      "name": "Fetch data from Contract document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        162800
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/contract-document",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-sap",
+      "name": "Send to SAP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        162800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/sap",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-162800",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        162800
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Contract document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Contract document": {
+      "main": [
+        {
+          "node": "Send to SAP",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to SAP": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

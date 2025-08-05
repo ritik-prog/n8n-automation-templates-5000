@@ -1,0 +1,221 @@
+{
+  "name": "sync-calendar-events-with-crm-activities",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/15 * * * *"
+      },
+      "id": "c1",
+      "name": "Every 15 min",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "list",
+        "calendar": "primary",
+        "returnAll": true,
+        "options": {
+          "timeMin": "={{new Date(Date.now()-24*3600*1000).toISOString()}}",
+          "timeMax": "={{new Date(Date.now()+14*24*3600*1000).toISOString()}}"
+        }
+      },
+      "id": "c2",
+      "name": "Fetch GCal Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        330,
+        240
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "gcal_cred",
+          "name": "Google Calendar"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst events = Array.isArray($json)?$json:[$json];\nreturn events.map(e => ({ json: {\n  eventId: e.id, title: e.summary||'Meeting', description: e.description||'',\n  start: e.start?.dateTime || e.start?.date, end: e.end?.dateTime || e.end?.date,\n  attendees: (e.attendees||[]).map(a=>a.email).join(','),\n}}));\n"
+      },
+      "id": "c3",
+      "name": "Normalize Events",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        560,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "note",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hs_timestamp",
+                "value": "={{$json.start}}"
+              },
+              {
+                "property": "hs_note_body",
+                "value": "={{'Calendar: '+$json.title+'\\nAttendees: '+$json.attendees+'\\nExternalEventId: '+$json.eventId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c4",
+      "name": "Create HubSpot Note for Event",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        790,
+        240
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "hs_task_body",
+                "operation": "CONTAINS_TOKEN",
+                "value": "schedule_on_calendar"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c5",
+      "name": "Fetch HubSpot Tasks to Schedule",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        330,
+        420
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst tasks = Array.isArray($json)?$json:[$json];\nreturn tasks.map(t => ({ json: {\n  title: t.properties?.hs_task_subject || 'Sales Task',\n  description: t.properties?.hs_task_body || '',\n  start: new Date().toISOString(),\n}}));\n"
+      },
+      "id": "c6",
+      "name": "Transform Tasks \u2192 Events",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        560,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "calendar": "primary",
+        "start": "={{$json.start}}",
+        "end": "={{new Date(new Date($json.start).getTime()+60*60*1000).toISOString()}}",
+        "summary": "={{$json.title}}",
+        "description": "={{$json.description}}"
+      },
+      "id": "c7",
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        790,
+        420
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "gcal_cred",
+          "name": "Google Calendar"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 min": {
+      "main": [
+        [
+          {
+            "node": "Fetch GCal Events",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch HubSpot Tasks to Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GCal Events": {
+      "main": [
+        [
+          {
+            "node": "Normalize Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Events": {
+      "main": [
+        [
+          {
+            "node": "Create HubSpot Note for Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch HubSpot Tasks to Schedule": {
+      "main": [
+        [
+          {
+            "node": "Transform Tasks \u2192 Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Tasks \u2192 Events": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

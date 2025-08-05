@@ -1,0 +1,212 @@
+{
+  "name": "auto-reconcile-bank-transactions-with-accounting-data",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 1 * * *"
+      },
+      "id": "rec1",
+      "name": "Daily 01:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.plaid.example.com/transactions?days=7",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.plaidToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "rec2",
+      "name": "Fetch Bank Txns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/ledger?days=30",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "rec3",
+      "name": "Fetch Ledger",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst txns = ($items(0).item.json.transactions||[]).map(t=>({id:t.id, date:new Date(t.date), amount:+t.amount, desc:t.name}));\nconst ledg = ($items(1).item.json.entries||[]).map(l=>({id:l.id, date:new Date(l.date), amount:+l.amount, memo:l.memo}));\nconst matched=[], unmatched=[];\nfor(const t of txns){\n  const cand = ledg.find(l => Math.abs(l.amount - t.amount) < 0.01 && Math.abs((l.date - t.date)/86400000) <= 2);\n  if(cand){ matched.push({bankId:t.id, ledgerId:cand.id, amount:t.amount}); }\n  else { unmatched.push(t); }\n}\nreturn [{json:{matched, unmatched}}];\n"
+      },
+      "id": "rec4",
+      "name": "Match Engine",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/reconcile",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "pairs": "={{$json.matched}}"
+        }
+      },
+      "id": "rec5",
+      "name": "Post Reconciliation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "Reconcile!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.matched.length}}",
+          "={{$json.unmatched.length}}"
+        ]
+      },
+      "id": "rec6",
+      "name": "Log Summary",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#finance",
+        "text": "\ud83d\udd04 Reconcile: matched {{$json.matched.length}}, unmatched {{$json.unmatched.length}}"
+      },
+      "id": "rec7",
+      "name": "Slack Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 01:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Bank Txns",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Bank Txns": {
+      "main": [
+        [
+          {
+            "node": "Match Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Ledger": {
+      "main": [
+        [
+          {
+            "node": "Match Engine",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Match Engine": {
+      "main": [
+        [
+          {
+            "node": "Post Reconciliation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

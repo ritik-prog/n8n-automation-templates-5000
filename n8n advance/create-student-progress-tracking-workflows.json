@@ -1,0 +1,166 @@
+{
+  "name": "create-student-progress-tracking-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 * * 1-5"
+      },
+      "id": "sp1",
+      "name": "Weekdays 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://lms.example.com/api/progress?window=7d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.lmsToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sp2",
+      "name": "Fetch Progress (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst prog=$json.students||[]; // [{email,name,completion,pastDue,streak}]\nconst atRisk=prog.filter(s=> s.completion<0.6 || (s.pastDue||0)>2);\natRisk.sort((a,b)=> (b.pastDue||0)-(a.pastDue||0));\nreturn atRisk.map(s=>({json:{email:s.email,name:s.name,completion:s.completion,pastDue:s.pastDue,streak:s.streak}}));\n"
+      },
+      "id": "sp3",
+      "name": "Identify At-Risk",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "advisor@school.edu",
+        "toEmail": "={{$json.email}}",
+        "subject": "Quick nudge on your course progress",
+        "text": "Hi {{$json.name}}, we noticed some overdue items. Need help catching up? Here are suggested next steps in your LMS."
+      },
+      "id": "sp4",
+      "name": "Email Student",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#instructors",
+        "text": "\ud83d\udc40 At-risk: {{$json.name}} ({{$json.email}}) \u2014 completion {{$json.completion*100}}%, past due {{$json.pastDue}}"
+      },
+      "id": "sp5",
+      "name": "Notify Instructor",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "edu-health-ops-sheet-id",
+        "range": "Progress!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.email}}",
+          "={{$json.completion}}",
+          "={{$json.pastDue}}",
+          "={{$json.streak}}"
+        ]
+      },
+      "id": "sp6",
+      "name": "Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekdays 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Progress (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Progress (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Identify At-Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identify At-Risk": {
+      "main": [
+        [
+          {
+            "node": "Email Student",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Instructor",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,103 @@
+{
+  "name": "Assign to agent from Call transcript and send to Knowledge base",
+  "nodes": [
+    {
+      "id": "trigger-call-transcript",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        95400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "assign-to-agent-from-call-transcript-and-send-to-knowledge-base",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-call-transcript",
+      "name": "Fetch data from Call transcript",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        95400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/call-transcript",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-knowledge-base",
+      "name": "Send to Knowledge base",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        95400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/knowledge-base",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-95400",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        95400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Call transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Call transcript": {
+      "main": [
+        {
+          "node": "Send to Knowledge base",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Knowledge base": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

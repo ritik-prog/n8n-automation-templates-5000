@@ -1,0 +1,224 @@
+{
+  "name": "generate-automated-overtime-approval-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ot-submit"
+      },
+      "id": "ot1",
+      "name": "Overtime Submit Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{email:b.email,manager:b.manager,date:b.date,hours:Number(b.hours||0),reason:b.reason||''}}];"
+      },
+      "id": "ot2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "hr@yourcompany.com",
+        "toEmail": "={{$json.manager}}",
+        "subject": "Overtime approval needed: {{$json.email}}",
+        "text": "Approve: https://yourdomain.com/ot-approve?e={{encodeURIComponent($json.email)}}&d={{encodeURIComponent($json.date)}}&h={{encodeURIComponent($json.hours)}}\\nDeny: https://yourdomain.com/ot-deny?e={{encodeURIComponent($json.email)}}&d={{encodeURIComponent($json.date)}}"
+      },
+      "id": "ot3",
+      "name": "Email Manager",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        540,
+        240
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "ot-approve"
+      },
+      "id": "ot4",
+      "name": "Approve Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "ot-deny"
+      },
+      "id": "ot5",
+      "name": "Deny Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const q=$json.query||{}; return [{json:{email:q.e,date:q.d,hours:Number(q.h||0),decision:'approved'}}];"
+      },
+      "id": "ot6",
+      "name": "Normalize Approve",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const q=$json.query||{}; return [{json:{email:q.e,date:q.d,hours:0,decision:'denied'}}];"
+      },
+      "id": "ot7",
+      "name": "Normalize Deny",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "overtime-sheet-id",
+        "range": "Overtime!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.date}}",
+          "={{$json.hours}}",
+          "={{$json.decision}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "ot8",
+      "name": "Log Decision (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        540,
+        580
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "\u23f1\ufe0f OT {{$json.decision}} for {{$json.email}} ({{$json.date}} {{$json.hours}}h)"
+      },
+      "id": "ot9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        580
+      ]
+    }
+  ],
+  "connections": {
+    "Overtime Submit Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Approve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deny Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Deny",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Approve": {
+      "main": [
+        [
+          {
+            "node": "Log Decision (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Deny": {
+      "main": [
+        [
+          {
+            "node": "Log Decision (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

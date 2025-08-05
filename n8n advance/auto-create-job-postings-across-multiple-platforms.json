@@ -1,0 +1,201 @@
+{
+  "name": "auto-create-job-postings-across-multiple-platforms",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "job-post"
+      },
+      "id": "jp1",
+      "name": "Job Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{title:b.title||'',location:b.location||'Remote',department:b.department||'',description:b.description||'',webflowCollection:'jobs-collection-id'}}];"
+      },
+      "id": "jp2",
+      "name": "Normalize JD",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.greenhouse.io/v1/boards/yourcompany/jobs",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Basic {{$credentials.greenhouseToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "title": "={{$json.title}}",
+          "location": "={{$json.location}}",
+          "content": "={{$json.description}}",
+          "department": "={{$json.department}}"
+        }
+      },
+      "id": "jp3",
+      "name": "Post to Greenhouse (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.lever.co/v1/postings",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.leverToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "title": "={{$json.title}}",
+          "workplaceType": "remote",
+          "location": "={{$json.location}}",
+          "description": "={{$json.description}}",
+          "department": "={{$json.department}}"
+        }
+      },
+      "id": "jp4",
+      "name": "Post to Lever (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.webflow.com/collections/{{$json.webflowCollection}}/items",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.webflowToken}}"
+              },
+              {
+                "name": "accept-version",
+                "value": "1.0.0"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "fields": {
+            "name": "={{$json.title}}",
+            "slug": "={{$json.title.toLowerCase().replace(/[^a-z0-9]+/g,'-')}}",
+            "_draft": false,
+            "_archived": false,
+            "location": "={{$json.location}}",
+            "department": "={{$json.department}}",
+            "rich_content": "={{$json.description}}"
+          }
+        }
+      },
+      "id": "jp5",
+      "name": "Create Website Job (Webflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#hiring",
+        "text": "Job posted: {{$json.title}} ({{$json.location}}) \u2014 website + ATS."
+      },
+      "id": "jp6",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Job Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize JD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize JD": {
+      "main": [
+        [
+          {
+            "node": "Post to Greenhouse (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Lever (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Website Job (Webflow)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

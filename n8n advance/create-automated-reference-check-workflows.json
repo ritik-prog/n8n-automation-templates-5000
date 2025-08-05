@@ -1,0 +1,219 @@
+{
+  "name": "create-automated-reference-check-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reference-request"
+      },
+      "id": "rc1",
+      "name": "Reference Request Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; const refs=(b.references||[]).map(r=>({json:{candidate:b.candidate, role:b.role, recruiter:b.recruiterEmail, refName:r.name, refEmail:(r.email||'').toLowerCase()}})); return refs;"
+      },
+      "id": "rc2",
+      "name": "Normalize References",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "references@yourcompany.com",
+        "toEmail": "={{$json.refEmail}}",
+        "subject": "Reference request for {{$json.candidate}}",
+        "text": "Hi {{$json.refName}},\\nCould you complete this quick reference check: https://yourdomain.com/ref-form?c={{encodeURIComponent($json.candidate)}}&e={{encodeURIComponent($json.refEmail)}} \\nThanks!"
+      },
+      "id": "rc3",
+      "name": "Email Reference",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reference-response"
+      },
+      "id": "rc4",
+      "name": "Reference Response Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{candidate:b.candidate,refEmail:b.email,answers:b.answers||'',freeText:b.freeText||''}}];"
+      },
+      "id": "rc5",
+      "name": "Normalize Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Read a reference response and summarize key strengths, risks, and a red/yellow/green hire signal. Return JSON {summary, strengths:[...], risks:[...], signal:'red|yellow|green'}."
+          },
+          {
+            "role": "user",
+            "content": "{{$json}}"
+          }
+        ]
+      },
+      "id": "rc6",
+      "name": "Analyze Reference (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        540
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "references-sheet-id",
+        "range": "Results!A1",
+        "fields": [
+          "={{$prevNode['Normalize Response'].json.candidate}}",
+          "={{$prevNode['Normalize Response'].json.refEmail}}",
+          "={{$json.signal}}",
+          "={{$json.summary}}",
+          "={{($json.strengths||[]).join(', ')}}",
+          "={{($json.risks||[]).join(', ')}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "rc7",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        500
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#recruiting",
+        "text": "Reference for {{$prevNode['Normalize Response'].json.candidate}} \u2014 signal {{$json.signal}}. Summary: {{$json.summary}}"
+      },
+      "id": "rc8",
+      "name": "Slack Notify Recruiter",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        540
+      ]
+    }
+  ],
+  "connections": {
+    "Reference Request Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize References",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize References": {
+      "main": [
+        [
+          {
+            "node": "Email Reference",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reference Response Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Response": {
+      "main": [
+        [
+          {
+            "node": "Analyze Reference (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Reference (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify Recruiter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

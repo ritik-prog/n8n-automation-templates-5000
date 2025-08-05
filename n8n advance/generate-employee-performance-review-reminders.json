@@ -1,0 +1,130 @@
+{
+  "name": "generate-employee-performance-review-reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * *"
+      },
+      "id": "pr1",
+      "name": "Daily 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "hr-sheet-id",
+        "range": "Employees!A2:F999"
+      },
+      "id": "pr2",
+      "name": "Load Employees (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[]; const due=[]; const now=new Date(); for(const r of rows){ const [name,email,manager,lastReview,cycleDays,team]=r; const next=new Date(new Date(lastReview||'1970-01-01').getTime()+Number(cycleDays||180)*86400000); const days=(next-now)/86400000; if(days<=14 && days>=0) due.push({json:{name,email,manager,team,nextReview:next.toISOString().slice(0,10)}});} return due;"
+      },
+      "id": "pr3",
+      "name": "Pick Due in 14 Days",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "hr@yourcompany.com",
+        "toEmail": "={{$json.manager}}",
+        "subject": "Upcoming performance review: {{$json.name}}",
+        "text": "Hi,\\n{{$json.name}}'s review is due on {{$json.nextReview}}. Please schedule a 1:1 and complete the review form: https://forms.gle/yourreview\\n\u2014 HR"
+      },
+      "id": "pr4",
+      "name": "Email Manager",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "Review reminder sent for {{$json.name}} (due {{$json.nextReview}}) to {{$json.manager}}."
+      },
+      "id": "pr5",
+      "name": "Slack Log",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Employees (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Employees (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Pick Due in 14 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Due in 14 Days": {
+      "main": [
+        [
+          {
+            "node": "Email Manager",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

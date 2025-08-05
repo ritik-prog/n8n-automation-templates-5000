@@ -1,0 +1,129 @@
+{
+  "name": "Translate customer request from GitHub issue and send to Slack",
+  "nodes": [
+    {
+      "id": "trigger-github-issue",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        93800
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "translate-customer-request-from-github-issue-and-send-to-slack",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-github-issue",
+      "name": "Fetch data from GitHub issue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        93800
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/github-issue",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-translate-customer-request",
+      "name": "AI: Translate Customer Request",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        93800
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: translate customer request"
+      }
+    },
+    {
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        93800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/slack",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-93800",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        93800
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from GitHub issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from GitHub issue": {
+      "main": [
+        {
+          "node": "AI: Translate Customer Request",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Translate Customer Request": {
+      "main": [
+        [
+          {
+            "node": "AI: Translate Customer Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Slack": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

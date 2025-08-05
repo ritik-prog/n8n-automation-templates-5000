@@ -1,0 +1,150 @@
+{
+  "name": "create-learning-path-from-skill-assessment",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "skill-assessment-input"
+      },
+      "id": "1",
+      "name": "Skill Assessment Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "skill-assessment-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { name: $json.body.name, skills: $json.body.skills, goals: $json.body.goals } }];"
+      },
+      "id": "2",
+      "name": "Extract Assessment Info",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an educational advisor. Based on skills and goals, create a personalized learning path in JSON: {beginnerModules, intermediateModules, advancedModules, estimatedCompletionTimeWeeks}."
+          },
+          {
+            "role": "user",
+            "content": "Name: {{$json.name}}\nSkills: {{$json.skills}}\nGoals: {{$json.goals}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Learning Path (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const plan = JSON.parse($json.choices[0].message.content); return [{ json: plan }];"
+      },
+      "id": "4",
+      "name": "Parse Learning Path",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "learning-path-database-id",
+        "range": "LearningPaths!A1",
+        "valueInputMode": "USER_ENTERED",
+        "fields": [
+          "={{$json.beginnerModules.join(', ')}}",
+          "={{$json.intermediateModules.join(', ')}}",
+          "={{$json.advancedModules.join(', ')}}",
+          "={{$json.estimatedCompletionTimeWeeks}}"
+        ]
+      },
+      "id": "5",
+      "name": "Log Learning Path to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Skill Assessment Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Assessment Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Assessment Info": {
+      "main": [
+        [
+          {
+            "node": "Generate Learning Path (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Learning Path (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Learning Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Learning Path": {
+      "main": [
+        [
+          {
+            "node": "Log Learning Path to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

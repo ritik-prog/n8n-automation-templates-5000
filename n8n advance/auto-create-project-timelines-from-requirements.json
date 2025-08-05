@@ -1,0 +1,194 @@
+{
+  "name": "auto-create-project-timelines-from-requirements",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "requirements-intake"
+      },
+      "id": "pt1",
+      "name": "Requirements Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n/**\n * Input shape example:\n * {\n *   project: \"Apollo\",\n *   startDate: \"2025-08-10\",\n *   sprintLengthDays: 14,\n *   workweek: [1,2,3,4,5], // Mon-Fri\n *   tasks: [\n *     {key:\"R1\", title:\"Auth service\", estDays:5, dependsOn:[], owner:\"alice@acme.com\", priority:1},\n *     {key:\"R2\", title:\"API gateway\", estDays:8, dependsOn:[\"R1\"], owner:\"bob@acme.com\", priority:1},\n *     {key:\"R3\", title:\"Mobile UI\", estDays:10, dependsOn:[\"R1\"], owner:\"eve@acme.com\", priority:2}\n *   ]\n * }\n */\nfunction addDaysSkippingWeekends(dateStr, days, workweek=[1,2,3,4,5]){\n  const d = new Date(dateStr);\n  let added = 0;\n  while(added < days){\n    d.setDate(d.getDate()+1);\n    const dow = d.getDay(); // 0 Sun\n    const num = dow===0?7:dow;\n    if(workweek.includes(num)) added++;\n  }\n  return d.toISOString().slice(0,10);\n}\nconst b = $json.body||$json;\nif(!b.tasks || !Array.isArray(b.tasks)) throw new Error(\"tasks[] required\");\nconst start = b.startDate || new Date().toISOString().slice(0,10);\nconst workweek = b.workweek || [1,2,3,4,5];\nconst map = new Map(b.tasks.map(t=>[t.key,t]));\nconst result = [];\nconst memo = new Map();\nfunction schedule(key){\n  if(memo.has(key)) return memo.get(key);\n  const t = map.get(key);\n  if(!t) throw new Error(\"Unknown dependency: \"+key);\n  let earliest = start;\n  for(const dep of (t.dependsOn||[])){\n    const d = schedule(dep);\n    // next day after dep end\n    const next = addDaysSkippingWeekends(d.end, 1, workweek);\n    if(next > earliest) earliest = next;\n  }\n  const end = addDaysSkippingWeekends(earliest, Number(t.estDays||1), workweek);\n  const sprintLen = Number(b.sprintLengthDays || 14);\n  const sprintIndex = Math.floor((new Date(earliest) - new Date(start)) / (sprintLen*86400000));\n  const out = {key:t.key, title:t.title||t.key, start:earliest, end, owner:t.owner||'', priority:t.priority||3, sprint:sprintIndex+1, dependsOn:t.dependsOn||[]};\n  memo.set(key, out);\n  return out;\n}\nfor(const t of b.tasks){\n  result.push(schedule(t.key));\n}\nresult.sort((a,b)=> (a.start<b.start?-1: a.start>b.start?1: (a.priority-b.priority)));\nconst gantt = result.map((r,i)=>({id:i+1, task:r.title, start:r.start, end:r.end, owner:r.owner, sprint:r.sprint, predecessors:r.dependsOn.join(',')}));\nreturn [{json:{project:b.project||'Project', startDate:start, schedule:result, gantt}}];\n"
+      },
+      "id": "pt2",
+      "name": "Plan Timeline (Critical Path-ish)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "pm-ops-sheet-id",
+        "range": "Timelines!A1",
+        "fields": [
+          "={{$json.project}}",
+          "={{$json.startDate}}",
+          "={{JSON.stringify($json.schedule)}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "pt3",
+      "name": "Persist Plan (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        580,
+        240
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "task",
+        "workspace": "asana-workspace-id",
+        "name": "={{$json.project+' planning baseline'}}",
+        "additionalFields": {
+          "notes": "={{'Baseline created at '+$now}}",
+          "projects": [
+            "pm-master-project-id"
+          ]
+        }
+      },
+      "id": "pt4",
+      "name": "Create Baseline Task (Asana)",
+      "type": "n8n-nodes-base.asana",
+      "typeVersion": 1,
+      "position": [
+        580,
+        360
+      ],
+      "credentials": {
+        "asanaApi": {
+          "id": "asana_cred",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return ($json.gantt||[]).map(t=>({json:t}));"
+      },
+      "id": "pt5",
+      "name": "Split Gantt",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        820,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "task",
+        "workspace": "asana-workspace-id",
+        "name": "={{$json.task}}",
+        "additionalFields": {
+          "assignee": "={{$json.owner}}",
+          "dueOn": "={{$json.end}}",
+          "notes": "={{'Sprint '+$json.sprint+' | predecessors: '+$json.predecessors}}",
+          "projects": [
+            "pm-master-project-id"
+          ]
+        }
+      },
+      "id": "pt6",
+      "name": "Create Tasks (Asana)",
+      "type": "n8n-nodes-base.asana",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        260
+      ],
+      "credentials": {
+        "asanaApi": {
+          "id": "asana_cred",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#project-apollo",
+        "text": "\ud83d\uddd3\ufe0f Timeline created for {{$prevNode['Plan Timeline (Critical Path-ish)'].json.project}}. {{=$json.task}} due {{=$json.end}} (Sprint {{=$json.sprint}})"
+      },
+      "id": "pt7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "Requirements Webhook": {
+      "main": [
+        [
+          {
+            "node": "Plan Timeline (Critical Path-ish)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Timeline (Critical Path-ish)": {
+      "main": [
+        [
+          {
+            "node": "Persist Plan (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Baseline Task (Asana)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Gantt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Gantt": {
+      "main": [
+        [
+          {
+            "node": "Create Tasks (Asana)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

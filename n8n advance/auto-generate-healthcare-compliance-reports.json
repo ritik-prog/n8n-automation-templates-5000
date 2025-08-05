@@ -1,0 +1,193 @@
+{
+  "name": "auto-generate-healthcare-compliance-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 5 5 * *"
+      },
+      "id": "hc1",
+      "name": "Monthly 5th 05:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ehr.example.com/audit/access?period=prev_month",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.ehrToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "hc2",
+      "name": "Fetch Access Logs (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ehr.example.com/audit/changes?period=prev_month",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.ehrToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "hc3",
+      "name": "Fetch Change Logs (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst access=$items(0).item.json||{};\nconst changes=$items(1).item.json||{};\nconst md=`# Compliance Report\nPHI Access events: ${(access.events||[]).length}\nRecord changes: ${(changes.events||[]).length}\nExceptions: ${((access.exceptions||[]).length + (changes.exceptions||[]).length)}\nGenerated: ${new Date().toISOString()}`;\nreturn [{json:{md}}];\n"
+      },
+      "id": "hc4",
+      "name": "Compose Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.pdf-service.example.com/markdown-to-pdf",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pdfServiceToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "markdown": "={{$json.md}}",
+          "fileName": "={{'compliance-'+$now+'.pdf'}}"
+        }
+      },
+      "id": "hc5",
+      "name": "PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "compliance@hospital.org",
+        "toEmail": "compliance@hospital.org",
+        "subject": "Monthly Compliance Report",
+        "text": "Attached is the compliance report for last month."
+      },
+      "id": "hc6",
+      "name": "Email Compliance",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monthly 5th 05:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Access Logs (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Change Logs (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Access Logs (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Compose Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Change Logs (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Compose Report",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Compose Report": {
+      "main": [
+        [
+          {
+            "node": "PDF",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Compliance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

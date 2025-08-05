@@ -1,0 +1,103 @@
+{
+  "name": "Update contract registry from Procurement request and send to SAP",
+  "nodes": [
+    {
+      "id": "trigger-procurement-request",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        164600
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-contract-registry-from-procurement-request-and-send-to-sap",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-procurement-request",
+      "name": "Fetch data from Procurement request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        164600
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/procurement-request",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-sap",
+      "name": "Send to SAP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        164600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/sap",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-164600",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        164600
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Procurement request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Procurement request": {
+      "main": [
+        {
+          "node": "Send to SAP",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to SAP": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

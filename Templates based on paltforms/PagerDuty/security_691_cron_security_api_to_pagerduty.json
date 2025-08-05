@@ -1,0 +1,106 @@
+{
+  "name": "Template 691",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/6 * * * *"
+      },
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Security API",
+      "type": "n8n-nodes-base.securityapi",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "PagerDuty",
+      "type": "n8n-nodes-base.pagerduty",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "WordPress",
+      "type": "n8n-nodes-base.wordpress",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "Security API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security API": {
+      "main": [
+        [
+          {
+            "node": "PagerDuty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PagerDuty": {
+      "main": [
+        [
+          {
+            "node": "WordPress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 691
+}

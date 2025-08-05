@@ -1,0 +1,152 @@
+{
+  "name": "generate-legal-contract-summaries",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-contract"
+      },
+      "id": "1",
+      "name": "Upload Contract Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "upload-legal-doc"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { contractTitle: $json.body.title, contractText: $json.body.text } }];"
+      },
+      "id": "2",
+      "name": "Extract Contract Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a legal assistant. Summarize this contract in plain language for quick review. Include: Parties, Obligations, Term, Payment, Termination, and Risks. Respond in JSON with those sections."
+          },
+          {
+            "role": "user",
+            "content": "Title: {{$json.contractTitle}}\n\nText:\n{{$json.contractText}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Summarize Contract (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const summary = JSON.parse($json.choices[0].message.content); return [{ json: summary }];"
+      },
+      "id": "4",
+      "name": "Parse Summary Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "legal-summary-log-id",
+        "range": "ContractSummaries!A1",
+        "valueInputMode": "USER_ENTERED",
+        "fields": [
+          "={{$json.Parties}}",
+          "={{$json.Obligations}}",
+          "={{$json.Term}}",
+          "={{$json.Payment}}",
+          "={{$json.Termination}}",
+          "={{$json.Risks}}"
+        ]
+      },
+      "id": "5",
+      "name": "Store Summary in Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Upload Contract Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Contract Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Contract Data": {
+      "main": [
+        [
+          {
+            "node": "Summarize Contract (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Contract (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Summary Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Summary Output": {
+      "main": [
+        [
+          {
+            "node": "Store Summary in Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

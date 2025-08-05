@@ -1,0 +1,214 @@
+{
+  "name": "auto-schedule-interviews-based-on-availability",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "schedule-interview"
+      },
+      "id": "is1",
+      "name": "Interview Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{candidate:{name:b.name,email:b.email}, role:b.role||'', duration:b.duration||30, timezone:b.timezone||'UTC', interviewers:b.interviewers||[]}}];"
+      },
+      "id": "is2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/calendar/v3/freeBusy",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleapisToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "timeMin": "={{new Date().toISOString()}}",
+          "timeMax": "={{new Date(Date.now()+7*86400000).toISOString()}}",
+          "items": "={{$json.interviewers.map(e=>({id:e}))}}"
+        }
+      },
+      "id": "is3",
+      "name": "Get FreeBusy (GCal)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const dur=Number($prevNode['Normalize'].json.duration||30);const calendars=$json.calendars||{};const busyByCal=Object.fromEntries(Object.entries(calendars).map(([k,v])=>[k,(v.busy||[]).map(b=>[new Date(b.start).getTime(), new Date(b.end).getTime()]) ])); const start=Date.now()+24*60*60*1000; const end=Date.now()+7*24*60*60*1000; const step=15*60*1000; function isFree(ts){const te=ts+dur*60*1000; for(const blocks of Object.values(busyByCal)){ for(const [s,e] of blocks){ if(!(te<=s || ts>=e)) return false; } } return true;} let slot=null; for(let t=start;t<end;t+=step){ if(new Date(t).getUTCHours()<8||new Date(t).getUTCHours()>17) continue; if(isFree(t)){ slot=new Date(t).toISOString(); break; } } if(!slot){return [{json:{error:'No common slot found'}}];} return [{json:{slot, duration:dur}}];"
+      },
+      "id": "is4",
+      "name": "Find Common Slot",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleapisToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "summary": "={{'Interview: '+$prevNode['Normalize'].json.role}}",
+          "start": {
+            "dateTime": "={{$json.slot}}"
+          },
+          "end": {
+            "dateTime": "={{new Date(new Date($json.slot).getTime()+$json.duration*60000).toISOString()}}"
+          },
+          "attendees": "={{[{email:$prevNode['Normalize'].json.candidate.email}, ...$prevNode['Normalize'].json.interviewers.map(e=>({email:e}))]}}",
+          "description": "Auto-scheduled by n8n"
+        }
+      },
+      "id": "is5",
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "recruiting@yourcompany.com",
+        "toEmail": "={{$prevNode['Normalize'].json.candidate.email}}",
+        "subject": "Interview scheduled",
+        "text": "Hi {{$prevNode['Normalize'].json.candidate.name}},\\nYour interview for {{$prevNode['Normalize'].json.role}} is scheduled on {{$prevNode['Find Common Slot'].json.slot}}. Check your calendar invite.\\n\u2014 Recruiting"
+      },
+      "id": "is6",
+      "name": "Email Candidate",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#recruiting",
+        "text": "Scheduled interview for {{$prevNode['Normalize'].json.candidate.name}} at {{$prevNode['Find Common Slot'].json.slot}}"
+      },
+      "id": "is7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Interview Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Get FreeBusy (GCal)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get FreeBusy (GCal)": {
+      "main": [
+        [
+          {
+            "node": "Find Common Slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Common Slot": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Candidate",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

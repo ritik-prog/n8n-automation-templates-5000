@@ -1,0 +1,138 @@
+{
+  "name": "generate-support-performance-dashboards",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 5 * * *"
+      },
+      "id": "sp1",
+      "name": "Daily 05:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/metrics?range=1d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sp2",
+      "name": "Fetch Metrics (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const m=$json||{}; const out={newTickets:m.new||0,firstResponseTime:m.frt||0,avgResolutionTime:m.art||0,backlog:m.backlog||0,csat:m.csat||0}; return [{json:out}];"
+      },
+      "id": "sp3",
+      "name": "Normalize Metrics",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "support-kpi-sheet-id",
+        "range": "Daily!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.newTickets}}",
+          "={{$json.firstResponseTime}}",
+          "={{$json.avgResolutionTime}}",
+          "={{$json.backlog}}",
+          "={{$json.csat}}"
+        ]
+      },
+      "id": "sp4",
+      "name": "Append to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#support",
+        "text": "\ud83d\udcca KPIs \u2014 New: {{$json.newTickets}}, FRT: {{$json.firstResponseTime}}m, ART: {{$json.avgResolutionTime}}m, Backlog: {{$json.backlog}}, CSAT: {{$json.csat}}%."
+      },
+      "id": "sp5",
+      "name": "Slack Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 05:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Metrics (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Metrics (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Metrics": {
+      "main": [
+        [
+          {
+            "node": "Append to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

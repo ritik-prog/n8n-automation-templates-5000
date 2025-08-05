@@ -1,0 +1,129 @@
+{
+  "name": "Create response draft from Freshdesk ticket and send to Knowledge base",
+  "nodes": [
+    {
+      "id": "trigger-freshdesk-ticket",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        99600
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-response-draft-from-freshdesk-ticket-and-send-to-knowledge-base",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-freshdesk-ticket",
+      "name": "Fetch data from Freshdesk ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        99600
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/freshdesk-ticket",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-create-response-draft",
+      "name": "AI: Create Response Draft",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        99600
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: create response draft"
+      }
+    },
+    {
+      "id": "send-knowledge-base",
+      "name": "Send to Knowledge base",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        99600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/knowledge-base",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-99600",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        99600
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Freshdesk ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Freshdesk ticket": {
+      "main": [
+        {
+          "node": "AI: Create Response Draft",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Create Response Draft": {
+      "main": [
+        [
+          {
+            "node": "AI: Create Response Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Knowledge base": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

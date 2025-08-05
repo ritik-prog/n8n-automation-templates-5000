@@ -1,0 +1,226 @@
+{
+  "name": "generate-monthly-financial-reports-and-distribute",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 3 2 * *"
+      },
+      "id": "mr1",
+      "name": "Monthly on 2nd 03:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/reports/pnl?period=prev_month",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "mr2",
+      "name": "Fetch P&L",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/reports/balancesheet?period=prev_month",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "mr3",
+      "name": "Fetch Balance Sheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst pnl = $items(0).item.json || {};\nconst bs  = $items(1).item.json || {};\nfunction mdTable(obj){\n  const rows = (obj.rows||[]).map(r=>`| ${r.name} | ${r.value} |`).join('\\n');\n  return `| Account | Amount |\\n|---|---|\\n${rows}`;\n}\nconst md = `# Monthly Financial Report\n## Profit & Loss\n${mdTable(pnl)}\n## Balance Sheet\n${mdTable(bs)}\nGenerated: ${new Date().toISOString()}`;\nreturn [{json:{md, fileName: `finance-report-${new Date().toISOString().slice(0,7)}.pdf`}}];\n"
+      },
+      "id": "mr4",
+      "name": "Compose Markdown",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.pdf-service.example.com/markdown-to-pdf",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pdfServiceToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "markdown": "={{$json.md}}",
+          "fileName": "={{$json.fileName}}"
+        }
+      },
+      "id": "mr5",
+      "name": "Markdown \u2192 PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "resource": "file",
+        "binaryData": false,
+        "additionalFields": {
+          "fileName": "={{$json.fileName}}",
+          "binaryPropertyName": "data"
+        },
+        "bucketName": "finance-reports",
+        "fileContent": "={{$json.md}}"
+      },
+      "id": "mr6",
+      "name": "Upload to S3 (md fallback)",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "s3": {
+          "id": "s3_cred",
+          "name": "S3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "finance@yourcompany.com",
+        "toEmail": "cfo@yourcompany.com, controllers@yourcompany.com",
+        "subject": "Monthly Financial Report",
+        "text": "Attached is the monthly financial report.",
+        "options": {}
+      },
+      "id": "mr7",
+      "name": "Email Finance",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        980,
+        180
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monthly on 2nd 03:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch P&L",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Balance Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch P&L": {
+      "main": [
+        [
+          {
+            "node": "Compose Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Balance Sheet": {
+      "main": [
+        [
+          {
+            "node": "Compose Markdown",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Compose Markdown": {
+      "main": [
+        [
+          {
+            "node": "Markdown \u2192 PDF",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload to S3 (md fallback)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Finance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

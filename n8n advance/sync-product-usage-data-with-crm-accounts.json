@@ -1,0 +1,197 @@
+{
+  "name": "sync-product-usage-data-with-crm-accounts",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 2 * * *"
+      },
+      "id": "us1",
+      "name": "Daily 02:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://dw.yourcompany.com/api/v1/account-usage-delta",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.dwApiKey}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "us2",
+      "name": "Fetch Usage Delta (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const arr=Array.isArray($json)?$json:[$json];return arr.map(r=>({json:r}));"
+      },
+      "id": "us3",
+      "name": "Normalize Records",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "resource": "company",
+        "additionalFields": {
+          "domain": "={{$json.domain}}"
+        }
+      },
+      "id": "us4",
+      "name": "Find Company",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "company",
+        "operation": "update",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "mau",
+                "value": "={{$prevNode['Normalize Records'].json.mau}}"
+              },
+              {
+                "property": "dau",
+                "value": "={{$prevNode['Normalize Records'].json.dau}}"
+              },
+              {
+                "property": "license_utilization",
+                "value": "={{$prevNode['Normalize Records'].json.licenseUtil}}"
+              },
+              {
+                "property": "feature_core_adoption",
+                "value": "={{$prevNode['Normalize Records'].json.featureCore}}"
+              },
+              {
+                "property": "feature_adv_adoption",
+                "value": "={{$prevNode['Normalize Records'].json.featureAdv}}"
+              }
+            ]
+          }
+        },
+        "companyId": "={{$json.id}}"
+      },
+      "id": "us5",
+      "name": "Update Company Usage",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#product-ops",
+        "text": "Usage synced for {{$prevNode['Find Company'].json.properties?.name || $prevNode['Normalize Records'].json.domain}}"
+      },
+      "id": "us6",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 02:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Usage Delta (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Usage Delta (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Records": {
+      "main": [
+        [
+          {
+            "node": "Find Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Company": {
+      "main": [
+        [
+          {
+            "node": "Update Company Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Company Usage": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,214 @@
+{
+  "name": "generate-automated-project-status-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * 1"
+      },
+      "id": "sr1",
+      "name": "Weekly Mon 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.asana.com/1.0/projects/pm-master-project-id/tasks?opt_fields=name,assignee.status,completed,completed_at,due_on,assignee.email",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.asanaToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sr2",
+      "name": "Fetch Tasks (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst tasks = ($json.data||[]).map(t=>({name:t.name, due:t.due_on, completed:!!t.completed, assignee:(t.assignee&&t.assignee.email)||'unassigned'}));\nconst total=tasks.length;\nconst done=tasks.filter(t=>t.completed).length;\nconst dueSoon=tasks.filter(t=>!t.completed && t.due && (new Date(t.due)-Date.now())<3*86400000);\nconst overdue=tasks.filter(t=>!t.completed && t.due && (new Date(t.due)<new Date()));\nconst progress = total? Math.round((done/total)*100):0;\nconst risks = overdue.slice(0,5).map(t=>`Overdue: ${t.name}`);\nconst blockers = dueSoon.slice(0,5).map(t=>`Due soon: ${t.name}`);\nconst md = `# Weekly Status\nProgress: ${progress}% (${done}/${total})\nOverdue: ${overdue.length} | Due soon: ${dueSoon.length}\n## Risks\n${risks.map(r=>'- '+r).join('\\n') || '- None'}\n## Blockers\n${blockers.map(r=>'- '+r).join('\\n') || '- None'}`;\nreturn [{json:{md, metrics:{progress,done,total,overdue:overdue.length,dueSoon:dueSoon.length}}}];\n"
+      },
+      "id": "sr3",
+      "name": "Summarize Metrics",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Turn the provided metrics and notes into an executive-friendly weekly status summary with sections: Overview, Highlights, Risks, Next Week. Keep it concise."
+          },
+          {
+            "role": "user",
+            "content": "Metrics: {{$json.metrics}}\\nRaw: {{$json.md}}"
+          }
+        ]
+      },
+      "id": "sr4",
+      "name": "AI Narrative",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.pdf-service.example.com/markdown-to-pdf",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pdfServiceToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "markdown": "={{$json.choices[0].message.content}}",
+          "fileName": "={{'status-'+$now+'.pdf'}}"
+        }
+      },
+      "id": "sr5",
+      "name": "PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "pm@yourcompany.com",
+        "toEmail": "execs@yourcompany.com",
+        "subject": "Weekly Project Status",
+        "text": "Attached is the weekly status.",
+        "options": {}
+      },
+      "id": "sr6",
+      "name": "Email Execs",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#project-apollo",
+        "text": "\ud83d\udcca Weekly status ready. Progress {{$prevNode['Summarize Metrics'].json.metrics.progress}}%"
+      },
+      "id": "sr7",
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Tasks (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Tasks (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Summarize Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Metrics": {
+      "main": [
+        [
+          {
+            "node": "AI Narrative",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Narrative": {
+      "main": [
+        [
+          {
+            "node": "PDF",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Execs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

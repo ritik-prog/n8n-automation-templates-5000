@@ -1,0 +1,103 @@
+{
+  "name": "Update inventory from WooCommerce price change and send to Google Sheets",
+  "nodes": [
+    {
+      "id": "trigger-woocommerce-price-change",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        178000
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-inventory-from-woocommerce-price-change-and-send-to-google-sheets",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-woocommerce-price-change",
+      "name": "Fetch data from WooCommerce price change",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        178000
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/woocommerce-price-change",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-google-sheets",
+      "name": "Send to Google Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        178000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/google-sheets",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-178000",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        178000
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from WooCommerce price change",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from WooCommerce price change": {
+      "main": [
+        {
+          "node": "Send to Google Sheets",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

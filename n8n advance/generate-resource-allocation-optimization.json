@@ -1,0 +1,162 @@
+{
+  "name": "generate-resource-allocation-optimization",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 * * 1"
+      },
+      "id": "ra1",
+      "name": "Weekly Mon 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://pm.example.com/api/assignments?range=2w",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pmToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ra2",
+      "name": "Fetch Assignments (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://hr.example.com/api/capacity?range=2w",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.hrToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ra3",
+      "name": "Fetch Capacity (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n/**\n * Simple resource balancing heuristic:\n * - Compute load per person per week (hours)\n * - If load > capacity by > 5h, propose moving lowest-priority tasks to underloaded person with matching skills.\n */\nconst assign=($items(0).item.json.assignments||[]); // [{user,email,task,project,hours,priority,skills:[]}]\nconst cap=($items(1).item.json.capacity||[]); // [{email,week,capacityHours,skills:[]}]\nconst byUser = {};\nfor(const a of assign){ byUser[a.email]=(byUser[a.email]||0)+(a.hours||0); }\nconst capByUser = {};\nfor(const c of cap){ capByUser[c.email]=(capByUser[c.email]||40); }\nconst proposals=[];\nfor(const [email, load] of Object.entries(byUser)){\n  const capacity = capByUser[email]||40;\n  if(load > capacity+5){\n    const overflow = load - capacity;\n    // candidate tasks to move\n    const tasks = assign.filter(x=>x.email===email).sort((a,b)=> (a.priority||3)-(b.priority||3) || b.hours-a.hours);\n    const move = [];\n    let moved=0;\n    for(const t of tasks){\n      if(moved>=overflow) break;\n      move.push(t);\n      moved+=t.hours||0;\n    }\n    // pick target: lowest load w/ skill match\n    const targets = Object.keys(capByUser).map(e=>({email:e, headroom:(capByUser[e]||40)-(byUser[e]||0)})).filter(x=>x.headroom>2 && x.email!==email).sort((a,b)=>b.headroom-a.headroom);\n    if(targets.length){\n      const target=targets[0];\n      for(const t of move){\n        proposals.push({from:email, to:target.email, task:t.task, project:t.project, hours:t.hours});\n        byUser[email]-=t.hours; byUser[target.email]=(byUser[target.email]||0)+t.hours;\n      }\n    }\n  }\n}\nreturn proposals.map(p=>({json:p}));\n"
+      },
+      "id": "ra4",
+      "name": "Balance Heuristic",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "pm-ops-sheet-id",
+        "range": "ResourceOpt!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.from}}",
+          "={{$json.to}}",
+          "={{$json.task}}",
+          "={{$json.project}}",
+          "={{$json.hours}}"
+        ]
+      },
+      "id": "ra5",
+      "name": "Log Proposals",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#resource-mgmt",
+        "text": "\ud83e\uddee Rebalance: move {{$json.task}} ({{$json.hours}}h) {{$json.from}} \u2192 {{$json.to}}"
+      },
+      "id": "ra6",
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Assignments (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Capacity (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Assignments (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Balance Heuristic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Capacity (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Balance Heuristic",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

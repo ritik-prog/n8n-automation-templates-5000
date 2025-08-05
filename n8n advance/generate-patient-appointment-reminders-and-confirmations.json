@@ -1,0 +1,291 @@
+{
+  "name": "generate-patient-appointment-reminders-and-confirmations",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 8 * * *"
+      },
+      "id": "ar1",
+      "name": "Daily 08:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ehr.example.com/fhir/Appointment?date=tomorrow&status=booked",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.ehrToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ar2",
+      "name": "Fetch Tomorrow Appointments (FHIR)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst entries=($json.entry||[]).map(e=>e.resource).map(a=>({id:a.id, when:a.start, patient:a.participant.find(p=>p.actor&&p.actor.reference&&p.actor.reference.startsWith('Patient/'))?.actor?.display||'Patient', patientRef:a.participant.find(p=>p.actor&&p.actor.reference&&p.actor.reference.startsWith('Patient/'))?.actor?.reference, telecom:(a.telecom||[])}));\nreturn entries.map(e=>({json:e}));\n"
+      },
+      "id": "ar3",
+      "name": "Normalize Appointments",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ehr.example.com/fhir/{{$json.patientRef}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.ehrToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ar4",
+      "name": "Fetch Patient (FHIR)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst p=$json; // FHIR Patient\nfunction getTelecom(p,system){ return (p.telecom||[]).find(t=>t.system===system)?.value }\nreturn [{json:{phone:getTelecom(p,'phone'), email:getTelecom(p,'email'), locale:(p.communication?.[0]?.language?.coding?.[0]?.code)||'en'}}];\n"
+      },
+      "id": "ar5",
+      "name": "Extract Telecom",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.twilio.com/send",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Basic {{$credentials.twilioBasic}}"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "to": "={{$json.phone}}",
+          "from": "+10000000000",
+          "body": "={{'Reminder: appointment on '+$prevNode['Normalize Appointments'].json.when+'. Reply YES to confirm or NO to cancel.'}}"
+        }
+      },
+      "id": "ar6",
+      "name": "SMS Reminder (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "clinic@hospital.org",
+        "toEmail": "={{$json.email}}",
+        "subject": "Appointment Reminder",
+        "text": "Your appointment is scheduled for {{$prevNode['Normalize Appointments'].json.when}}. Click to confirm: https://your.ngrok.io/confirm?id={{$prevNode['Normalize Appointments'].json.id}}",
+        "options": {}
+      },
+      "id": "ar7",
+      "name": "Email Reminder",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "confirm"
+      },
+      "id": "ar8",
+      "name": "Confirm Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{id:b.id, status:'fulfilled'}}];"
+      },
+      "id": "ar9",
+      "name": "Mark Confirmed",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ehr.example.com/fhir/Appointment/{{$json.id}}",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.ehrToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/fhir+json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "status": "={{$json.status}}"
+        }
+      },
+      "id": "ar10",
+      "name": "Update Appointment (FHIR)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 08:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Tomorrow Appointments (FHIR)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Tomorrow Appointments (FHIR)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Appointments": {
+      "main": [
+        [
+          {
+            "node": "Fetch Patient (FHIR)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Patient (FHIR)": {
+      "main": [
+        [
+          {
+            "node": "Extract Telecom",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Telecom": {
+      "main": [
+        [
+          {
+            "node": "SMS Reminder (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm Webhook": {
+      "main": [
+        [
+          {
+            "node": "Mark Confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Confirmed": {
+      "main": [
+        [
+          {
+            "node": "Update Appointment (FHIR)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

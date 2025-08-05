@@ -1,0 +1,334 @@
+{
+  "name": "auto-create-contracts-from-approved-quotes",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "quote-approved"
+      },
+      "id": "cqa1",
+      "name": "Quote Approved Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Expect body: { quoteId }\nconst qid = $json.body?.quoteId || $json.quoteId;\nreturn [{ json: { quoteId: qid } }];\n"
+      },
+      "id": "cqa2",
+      "name": "Extract QuoteId",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{`https://api.hubapi.com/crm/v3/objects/quotes/${$json.quoteId}`}}",
+        "authentication": "predefinedCredentialType"
+      },
+      "id": "cqa3",
+      "name": "Fetch Quote (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        220
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{`https://api.hubapi.com/crm/v3/objects/quotes/${$json.id}/associations/line_items`}}",
+        "authentication": "predefinedCredentialType"
+      },
+      "id": "cqa4",
+      "name": "Fetch Quote Line Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        380
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst quote = $items().find(i=>i.node.name==='Fetch Quote (HTTP)')?.json || {};\nconst items = $items().find(i=>i.node.name==='Fetch Quote Line Items')?.json?.results || [];\nconst lineItems = items.map(r => ({ name: r.to?.properties?.name||'Item', qty: Number(r.to?.properties?.quantity||1), price: Number(r.to?.properties?.price||0) }));\nlet subtotal = 0; for (const it of lineItems) subtotal += it.qty * it.price;\nconst taxRate = 0.18; const tax = +(subtotal*taxRate).toFixed(2); const total = +(subtotal+tax).toFixed(2);\nreturn [{ json: { quoteId: quote.id, quoteName: quote.properties?.hs_title || 'Quote', currency: quote.properties?.hs_quote_currency_code || 'USD', customerEmail: quote.properties?.hs_primary_contact_email || '', lineItems, subtotal, tax, total } }];\n"
+      },
+      "id": "cqa5",
+      "name": "Assemble Contract Model",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Draft a SaaS MSA + Order Form in concise language based on the quote data. Return JSON {title, bodyMarkdown, clauses:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "Quote: {{$json.quoteName}} Total {{$json.total}} {{$json.currency}} Items: {{$json.lineItems}} Customer: {{$json.customerEmail}}"
+          }
+        ]
+      },
+      "id": "cqa6",
+      "name": "Generate Contract (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={title:'Contract',bodyMarkdown:'# Contract\\n...'}};return [{json:o}];"
+      },
+      "id": "cqa7",
+      "name": "Parse Contract JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Convert markdown to a minimal HTML (DocuSign supports HTML documents)\nconst md = $json.bodyMarkdown || '# Contract';\nfunction escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}\nconst html = `<html><body>${escapeHtml(md).replace(/\\n/g,'<br/>')}</body></html>`;\nconst b64 = Buffer.from(html).toString('base64');\nreturn [{ json: { base64: b64, title: $json.title } }];\n"
+      },
+      "id": "cqa8",
+      "name": "HTML \u2192 Base64",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://demo.docusign.net/restapi/v2.1/accounts/{{ $credentials.docusignAccountId }}/envelopes",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.docusignAccessToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "optionsJson": "={{ { emailSubject: 'Please sign: ' + $prevNode['Parse Contract JSON'].json.title, documents: [{ documentBase64: $json.base64, name: $prevNode['Parse Contract JSON'].json.title + '.html', fileExtension: 'html', documentId: '1'}], recipients: { signers: [ { email: $prevNode['Assemble Contract Model'].json.customerEmail, name: $prevNode['Assemble Contract Model'].json.customerEmail, recipientId: '1', routingOrder: '1' } ] }, status: 'sent' } }}"
+      },
+      "id": "cqa9",
+      "name": "Create DocuSign Envelope (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "quote",
+        "operation": "update",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "contract_sent",
+                "value": "true"
+              }
+            ]
+          }
+        },
+        "quoteId": "={{$prevNode['Assemble Contract Model'].json.quoteId}}"
+      },
+      "id": "cqa10",
+      "name": "Update Quote Flag (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#contracts",
+        "text": "Contract sent for Quote {{$prevNode['Assemble Contract Model'].json.quoteName}} ({{$prevNode['Assemble Contract Model'].json.total}} {{$prevNode['Assemble Contract Model'].json.currency}})."
+      },
+      "id": "cqa11",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Quote Approved Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract QuoteId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract QuoteId": {
+      "main": [
+        [
+          {
+            "node": "Fetch Quote (HTTP)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Quote Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Quote (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Assemble Contract Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Quote Line Items": {
+      "main": [
+        [
+          {
+            "node": "Assemble Contract Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Contract Model": {
+      "main": [
+        [
+          {
+            "node": "Generate Contract (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Contract (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Contract JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Contract JSON": {
+      "main": [
+        [
+          {
+            "node": "HTML \u2192 Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML \u2192 Base64": {
+      "main": [
+        [
+          {
+            "node": "Create DocuSign Envelope (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create DocuSign Envelope (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Update Quote Flag (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Quote Flag (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

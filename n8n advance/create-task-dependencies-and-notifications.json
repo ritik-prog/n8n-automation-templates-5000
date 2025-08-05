@@ -1,0 +1,159 @@
+{
+  "name": "create-task-dependencies-and-notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "task-updated"
+      },
+      "id": "td1",
+      "name": "Task Update Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b=$json.body||$json;\nreturn [{json:{id:b.id, title:b.title, status:(b.status||'todo').toLowerCase(), due:b.due, owner:b.owner, project:b.project||'PM', changed:b.changedFields||[], completed: b.completed===true}}];\n"
+      },
+      "id": "td2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://pm.example.com/api/tasks/{{$json.id}}/dependents",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pmToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "td3",
+      "name": "Get Dependents (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst deps = $json.dependents||[];\nconst isDone = $item(0).$node['Normalize'].json.completed;\nreturn deps.map(d=>({json:{depId:d.id, depTitle:d.title, owner:d.owner, trigger:isDone?'unblock':'date-change', ref:$item(0).$node['Normalize'].json.id}}));\n"
+      },
+      "id": "td4",
+      "name": "Build Notifications",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#project-apollo",
+        "text": "\ud83d\udd17 Task {{$json.ref}} updated \u2192 Notifying dependent {{$json.depId}} / {{$json.depTitle}}"
+      },
+      "id": "td5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "pm@yourcompany.com",
+        "toEmail": "={{$json.owner}}",
+        "subject": "Task dependency update",
+        "text": "Task {{$json.ref}} changed. Your task {{$json.depTitle}} is affected (trigger {{$json.trigger}})."
+      },
+      "id": "td6",
+      "name": "Email Owner",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        980,
+        420
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Task Update Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Get Dependents (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Dependents (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Build Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notifications": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

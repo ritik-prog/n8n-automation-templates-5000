@@ -1,0 +1,103 @@
+{
+  "name": "Send rejection email from Resume email and send to BambooHR",
+  "nodes": [
+    {
+      "id": "trigger-resume-email",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        101600
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-rejection-email-from-resume-email-and-send-to-bamboohr",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-resume-email",
+      "name": "Fetch data from Resume email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        101600
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/resume-email",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-bamboohr",
+      "name": "Send to BambooHR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        101600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/bamboohr",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-101600",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        101600
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Resume email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Resume email": {
+      "main": [
+        {
+          "node": "Send to BambooHR",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to BambooHR": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

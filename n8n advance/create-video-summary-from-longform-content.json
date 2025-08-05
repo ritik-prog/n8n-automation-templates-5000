@@ -1,0 +1,148 @@
+{
+  "name": "create-video-summary-from-longform-content",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-video-transcript"
+      },
+      "id": "1",
+      "name": "Upload Video Transcript",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "video-transcript-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { transcript: $json.body.transcript, videoTitle: $json.body.videoTitle } }];"
+      },
+      "id": "2",
+      "name": "Extract Transcript and Title",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a professional content summarizer. Create a short, engaging summary of this video content (2\u20133 paragraphs), followed by 5 bullet-point takeaways."
+          },
+          {
+            "role": "user",
+            "content": "Title: {{$json.videoTitle}}\n\nTranscript:\n{{$json.transcript}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Summarize Video Content (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const out = JSON.parse($json.choices[0].message.content); return [{ json: out }];"
+      },
+      "id": "4",
+      "name": "Parse Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "video-summaries-sheet-id",
+        "range": "Summaries!A1",
+        "fields": [
+          "={{$json.title}}",
+          "={{$json.summary}}",
+          "={{$json.takeaways.join('\\n')}}"
+        ]
+      },
+      "id": "5",
+      "name": "Save Summary to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Upload Video Transcript": {
+      "main": [
+        [
+          {
+            "node": "Extract Transcript and Title",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transcript and Title": {
+      "main": [
+        [
+          {
+            "node": "Summarize Video Content (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Video Content (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Summary": {
+      "main": [
+        [
+          {
+            "node": "Save Summary to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

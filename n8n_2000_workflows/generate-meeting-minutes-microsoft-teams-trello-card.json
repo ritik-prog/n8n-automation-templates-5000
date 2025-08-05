@@ -1,0 +1,129 @@
+{
+  "name": "Generate meeting minutes from Microsoft Teams and send to Trello card",
+  "nodes": [
+    {
+      "id": "trigger-microsoft-teams",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        22100
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-meeting-minutes-from-microsoft-teams-and-send-to-trello-card",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-microsoft-teams",
+      "name": "Fetch data from Microsoft Teams",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        22100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/microsoft-teams",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-generate-meeting-minutes",
+      "name": "AI: Generate Meeting Minutes",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        22100
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: generate meeting minutes"
+      }
+    },
+    {
+      "id": "send-trello-card",
+      "name": "Send to Trello card",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        22100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/trello-card",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-22100",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        22100
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Microsoft Teams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Microsoft Teams": {
+      "main": [
+        {
+          "node": "AI: Generate Meeting Minutes",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Generate Meeting Minutes": {
+      "main": [
+        [
+          {
+            "node": "AI: Generate Meeting Minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Trello card": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

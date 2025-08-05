@@ -1,0 +1,219 @@
+{
+  "name": "create-automated-refund-and-return-processes",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ticket-refund"
+      },
+      "id": "rf1",
+      "name": "Refund Ticket Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{id:b.id,email:b.requester,amount:b.amount||0,currency:b.currency||'USD',orderId:b.orderId||'',reason:b.reason||'',returnRequested:!!b.returnRequested,address:b.address||''}}];"
+      },
+      "id": "rf2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.returnRequested}}"
+            }
+          ]
+        }
+      },
+      "id": "rf2a",
+      "name": "IF Return Requested",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "task",
+        "workspace": "asana-workspace-id",
+        "name": "={{'RMA for order '+$json.orderId}}",
+        "additionalFields": {
+          "assignee": "ops@yourcompany.com",
+          "notes": "={{'Customer: '+$json.email+'\\nReason: '+$json.reason+'\\nAddress: '+$json.address}}",
+          "projects": [
+            "returns-project-id"
+          ]
+        }
+      },
+      "id": "rf2b",
+      "name": "Create RMA Task (Asana)",
+      "type": "n8n-nodes-base.asana",
+      "typeVersion": 1,
+      "position": [
+        760,
+        240
+      ],
+      "credentials": {
+        "asanaApi": {
+          "id": "asana_cred",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.paymentgateway.com/v1/refunds",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.paymentsToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "orderId": "={{$json.orderId}}",
+          "amount": "={{$json.amount}}",
+          "currency": "={{$json.currency}}",
+          "reason": "={{$json.reason}}"
+        }
+      },
+      "id": "rf3",
+      "name": "Create Refund (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "support@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Refund initiated for order {{$json.orderId}}",
+        "text": "We have initiated your refund of {{$json.amount}} {{$json.currency}}. It may take 5\u201310 business days to appear."
+      },
+      "id": "rf4",
+      "name": "Notify Customer",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        980,
+        360
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "support-ops-sheet-id",
+        "range": "Refunds!A1",
+        "fields": [
+          "={{$json.orderId}}",
+          "={{$json.email}}",
+          "={{$json.amount}}",
+          "={{$json.currency}}",
+          "={{$json.returnRequested}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "rf5",
+      "name": "Log in Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        360
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Refund Ticket Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "IF Return Requested",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Refund (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Customer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log in Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Return Requested": {
+      "main": [
+        [
+          {
+            "node": "Create RMA Task (Asana)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,103 @@
+{
+  "name": "Schedule interview from Resume email and send to Workday",
+  "nodes": [
+    {
+      "id": "trigger-resume-email",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        119100
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "schedule-interview-from-resume-email-and-send-to-workday",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-resume-email",
+      "name": "Fetch data from Resume email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        119100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/resume-email",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-workday",
+      "name": "Send to Workday",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        119100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/workday",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-119100",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        119100
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Resume email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Resume email": {
+      "main": [
+        {
+          "node": "Send to Workday",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Workday": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

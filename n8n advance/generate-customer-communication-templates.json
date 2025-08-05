@@ -1,0 +1,159 @@
+{
+  "name": "generate-customer-communication-templates",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 2 * * 1"
+      },
+      "id": "tm1",
+      "name": "Weekly Mon 02:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets?status=resolved&range=7d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "tm2",
+      "name": "Fetch Resolved Tickets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "From resolved tickets, synthesize reusable customer reply templates. Return JSON {templates:[{name,whenToUse,subject,body}] }."
+          },
+          {
+            "role": "user",
+            "content": "Tickets: {{$json}}"
+          }
+        ]
+      },
+      "id": "tm3",
+      "name": "AI Build Templates",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o={templates:[]}; try{o=JSON.parse($json.choices[0].message.content)}catch(e){} return (o.templates||[]).map(t=>({json:t}));"
+      },
+      "id": "tm4",
+      "name": "Split Templates",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "support-ops-sheet-id",
+        "range": "Templates!A1",
+        "fields": [
+          "={{$json.name}}",
+          "={{$json.whenToUse}}",
+          "={{$json.subject}}",
+          "={{$json.body}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "tm5",
+      "name": "Save to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Mon 02:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Resolved Tickets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Resolved Tickets": {
+      "main": [
+        [
+          {
+            "node": "AI Build Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Build Templates": {
+      "main": [
+        [
+          {
+            "node": "Split Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Templates": {
+      "main": [
+        [
+          {
+            "node": "Save to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

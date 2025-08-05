@@ -1,0 +1,119 @@
+{
+  "name": "generate-support-cost-analysis-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 1 * *"
+      },
+      "id": "ca1",
+      "name": "Monthly 1st 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/ticket_costs?range=prev_month",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ca2",
+      "name": "Fetch Cost Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const d=$json.data||$json||[]; const arr=Array.isArray(d)?d:[d]; const totals=arr.reduce((s,x)=>{s.tickets=(s.tickets||0)+1; s.labor=(s.labor||0)+(x.minutes||0)*(x.ratePerMin||1); s.refunds=(s.refunds||0)+(x.refund||0); s.tools=(s.tools||0)+(x.tools||0); return s;},{}) ; totals.total=(totals.labor||0)+(totals.refunds||0)+(totals.tools||0); return [{json:totals}];"
+      },
+      "id": "ca3",
+      "name": "Summarize Costs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "support-finance-sheet-id",
+        "range": "Monthly!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.tickets}}",
+          "={{$json.labor}}",
+          "={{$json.refunds}}",
+          "={{$json.tools}}",
+          "={{$json.total}}"
+        ]
+      },
+      "id": "ca4",
+      "name": "Append to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monthly 1st 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Cost Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Cost Data": {
+      "main": [
+        [
+          {
+            "node": "Summarize Costs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Costs": {
+      "main": [
+        [
+          {
+            "node": "Append to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

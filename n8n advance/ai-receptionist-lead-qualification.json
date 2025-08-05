@@ -1,0 +1,182 @@
+{
+  "name": "ai-receptionist-lead-qualification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-receptionist-lead"
+      },
+      "id": "1",
+      "name": "Lead Input Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "ai-receptionist-lead-input"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { name: $json.body.name, email: $json.body.email, message: $json.body.message } }];"
+      },
+      "id": "2",
+      "name": "Extract Lead Info",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an AI receptionist. Based on the user's message, qualify the lead as High, Medium, or Low based on interest and intent. Respond in JSON with fields: qualification (High|Medium|Low), intentSummary, recommendedNextStep."
+          },
+          {
+            "role": "user",
+            "content": "Message from lead:\n{{$json.message}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Qualify Lead (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst res = JSON.parse($json.choices[0].message.content);\nreturn [{\n  json: {\n    name: $json.name,\n    email: $json.email,\n    qualification: res.qualification,\n    intentSummary: res.intentSummary,\n    nextStep: res.recommendedNextStep\n  }\n}];\n"
+      },
+      "id": "4",
+      "name": "Parse Qualification Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "your-leads-sheet-id",
+        "range": "QualifiedLeads!A1",
+        "valueInputMode": "USER_ENTERED",
+        "fields": [
+          "={{$json.name}}",
+          "={{$json.email}}",
+          "={{$json.qualification}}",
+          "={{$json.intentSummary}}",
+          "={{$json.nextStep}}"
+        ]
+      },
+      "id": "5",
+      "name": "Log to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "receptionist@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Thanks for reaching out!",
+        "text": "Hi {{$json.name}},\n\nThanks for contacting us. Based on your message, here's the next step: {{$json.nextStep}}\n\nBest,\nAI Receptionist"
+      },
+      "id": "6",
+      "name": "Send Follow-Up Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_credential",
+          "name": "SMTP Email"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Lead Input Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Lead Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Lead Info": {
+      "main": [
+        [
+          {
+            "node": "Qualify Lead (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualify Lead (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Qualification Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Qualification Result": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Follow-Up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

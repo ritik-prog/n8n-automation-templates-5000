@@ -1,0 +1,143 @@
+{
+  "name": "auto-sync-benefits-enrollment-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "benefits-enroll"
+      },
+      "id": "be1",
+      "name": "Benefits Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{email:b.email,plan:b.plan,dependents:b.dependents||[],effective:b.effective||new Date().toISOString().slice(0,10)}}];"
+      },
+      "id": "be2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.bamboohr.com/api/gateway.php/yourcompany/v1/employees/benefits",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Basic {{$credentials.bambooToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "email": "={{$json.email}}",
+          "plan": "={{$json.plan}}",
+          "dependents": "={{$json.dependents}}",
+          "effective": "={{$json.effective}}"
+        }
+      },
+      "id": "be3",
+      "name": "Push to HRIS (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "benefits-sheet-id",
+        "range": "Enrollments!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.plan}}",
+          "={{$json.effective}}",
+          "={{JSON.stringify($json.dependents)}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "be4",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "\ud83e\ude7a Benefits updated for {{$json.email}} ({{$json.plan}})"
+      },
+      "id": "be5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Benefits Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Push to HRIS (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

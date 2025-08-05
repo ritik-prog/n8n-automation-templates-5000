@@ -1,0 +1,202 @@
+{
+  "name": "create-automated-compliance-training-assignments",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 8 * * 1"
+      },
+      "id": "ct1",
+      "name": "Weekly Mon 08:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "compliance-sheet-id",
+        "range": "Assignments!A2:E999"
+      },
+      "id": "ct2",
+      "name": "Load Assignments (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        240
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[]; return rows.filter(r=>r[3]!=='assigned').map(r=>({json:{email:r[0],name:r[1],course:r[2],status:r[3]||'new',due:r[4]}}));"
+      },
+      "id": "ct3",
+      "name": "Pick Unassigned",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.yourlms.com/v1/assign",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.lmsToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "email": "={{$json.email}}",
+          "course": "={{$json.course}}",
+          "due": "={{$json.due}}"
+        }
+      },
+      "id": "ct4",
+      "name": "Assign in LMS (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "compliance@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Assigned: {{$json.course}} training",
+        "text": "Hi {{$json.name}},\\nYou\u2019ve been assigned {{$json.course}}. Due: {{$json.due}}. Link: https://lms.yourcompany.com\\n\u2014 Compliance"
+      },
+      "id": "ct5",
+      "name": "Email Employee",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "compliance-sheet-id",
+        "range": "Assignments!A:E",
+        "options": {
+          "valueRenderMode": "UNFORMATTED_VALUE"
+        },
+        "updateKey": "email",
+        "additionalFields": {
+          "valueInputMode": "RAW"
+        },
+        "dataPropertyAttachments": "={{[{\"email\":$json.email,\"status\":\"assigned\"}]}}"
+      },
+      "id": "ct6",
+      "name": "Mark Assigned (pseudo)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#compliance",
+        "text": "Assigned {{$json.course}} to {{$json.email}} (due {{$json.due}})"
+      },
+      "id": "ct7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 08:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Assignments (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Assignments (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Pick Unassigned",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Unassigned": {
+      "main": [
+        [
+          {
+            "node": "Assign in LMS (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Employee",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mark Assigned (pseudo)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

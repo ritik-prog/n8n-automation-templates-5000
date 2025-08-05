@@ -1,0 +1,152 @@
+{
+  "name": "create-automated-ticket-follow-up-sequences",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 */4 * * *"
+      },
+      "id": "fu1",
+      "name": "Every 4 hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets?status=pending_customer",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fu2",
+      "name": "Fetch Pending Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const ts=$json.tickets||$json||[]; const now=Date.now(); return (Array.isArray(ts)?ts:[ts]).map(t=>{ const idleH=(now-new Date(t.updatedAt))/3600000; let step=0; if(idleH>=72) step=3; else if(idleH>=48) step=2; else if(idleH>=24) step=1; return {json:{id:t.id,email:t.requester,step}}; }).filter(x=>x.json.step>0);"
+      },
+      "id": "fu3",
+      "name": "Which Follow-up",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "support@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Following up on your ticket {{$json.id}}",
+        "text": "Hi,\\nWe\u2019re checking in on ticket {{$json.id}}. If we don\u2019t hear back, we may close this as resolved. Reply to keep it open.\\n\u2014 Support"
+      },
+      "id": "fu4",
+      "name": "Send Follow-up Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets/{{$json.id}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "status": "={{$json.step>=3 ? 'resolved' : 'pending_customer'}}"
+        }
+      },
+      "id": "fu5",
+      "name": "Optionally Auto-Resolve",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "Every 4 hours": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pending Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pending Customer": {
+      "main": [
+        [
+          {
+            "node": "Which Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Which Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Optionally Auto-Resolve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

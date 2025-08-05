@@ -1,0 +1,152 @@
+{
+    "name": "Generate and Distribute Weekly Marketing Performance Reports",
+    "nodes": [
+        {
+            "id": "1",
+            "name": "Cron Trigger",
+            "type": "n8n-nodes-base.cron",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ],
+            "parameters": {
+                "triggerTimes": [
+                    {
+                        "weekDay": [
+                            "Monday"
+                        ],
+                        "hour": 8,
+                        "minute": 0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "2",
+            "name": "Get Google Analytics Data",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 1,
+            "position": [
+                450,
+                220
+            ],
+            "parameters": {
+                "url": "https://analyticsreporting.googleapis.com/v4/reports:batchGet",
+                "method": "POST",
+                "authentication": "oAuth2",
+                "bodyParametersUi": {
+                    "parameter": [
+                        {
+                            "name": "reportRequests",
+                            "value": "= {\"viewId\": \"YOUR_VIEW_ID\", \"dateRanges\": [{\"startDate\": \"7daysAgo\", \"endDate\": \"today\"}], \"metrics\": [{\"expression\": \"ga:sessions\"}, {\"expression\": \"ga:pageviews\"}], \"dimensions\": [{\"name\": \"ga:date\"}]}"
+                        }
+                    ]
+                },
+                "jsonParameters": true,
+                "options": {
+                    "fullResponse": true
+                }
+            }
+        },
+        {
+            "id": "3",
+            "name": "Aggregate Metrics",
+            "type": "n8n-nodes-base.function",
+            "typeVersion": 1,
+            "position": [
+                650,
+                220
+            ],
+            "parameters": {
+                "functionCode": "const metrics = items.map(i => i.json);\nlet totalSessions = 0;\nlet totalPageviews = 0;\nmetrics.forEach(m => {\n  totalSessions += parseInt(m.sessions || 0);\n  totalPageviews += parseInt(m.pageviews || 0);\n});\nreturn [{ json: { totalSessions, totalPageviews } }];"
+            }
+        },
+        {
+            "id": "4",
+            "name": "Create Google Docs Report",
+            "type": "n8n-nodes-base.googleDocs",
+            "typeVersion": 1,
+            "position": [
+                850,
+                220
+            ],
+            "parameters": {
+                "documentId": "YOUR_GOOGLE_DOC_TEMPLATE_ID",
+                "operation": "replaceText",
+                "textReplacements": [
+                    {
+                        "text": "{{totalSessions}}",
+                        "replaceWith": "={{$json[\"totalSessions\"]}}"
+                    },
+                    {
+                        "text": "{{totalPageviews}}",
+                        "replaceWith": "={{$json[\"totalPageviews\"]}}"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "5",
+            "name": "Send Email Report",
+            "type": "n8n-nodes-base.emailSend",
+            "typeVersion": 1,
+            "position": [
+                1050,
+                220
+            ],
+            "parameters": {
+                "fromEmail": "your-email@example.com",
+                "toEmail": "marketing-team@example.com",
+                "subject": "Weekly Marketing Performance Report",
+                "text": "Please find the attached weekly performance report."
+            }
+        }
+    ],
+    "connections": {
+        "1": {
+            "main": [
+                [
+                    {
+                        "node": "2",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "2": {
+            "main": [
+                [
+                    {
+                        "node": "3",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "3": {
+            "main": [
+                [
+                    {
+                        "node": "4",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "4": {
+            "main": [
+                [
+                    {
+                        "node": "5",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

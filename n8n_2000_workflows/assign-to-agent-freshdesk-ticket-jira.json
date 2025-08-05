@@ -1,0 +1,103 @@
+{
+  "name": "Assign to agent from Freshdesk ticket and send to Jira",
+  "nodes": [
+    {
+      "id": "trigger-freshdesk-ticket",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        98800
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "assign-to-agent-from-freshdesk-ticket-and-send-to-jira",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-freshdesk-ticket",
+      "name": "Fetch data from Freshdesk ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        98800
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/freshdesk-ticket",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-jira",
+      "name": "Send to Jira",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        98800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/jira",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-98800",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        98800
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Freshdesk ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Freshdesk ticket": {
+      "main": [
+        {
+          "node": "Send to Jira",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Jira": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

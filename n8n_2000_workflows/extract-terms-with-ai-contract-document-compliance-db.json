@@ -1,0 +1,129 @@
+{
+  "name": "Extract terms with ai from Contract document and send to Compliance DB",
+  "nodes": [
+    {
+      "id": "trigger-contract-document",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        160500
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-terms-with-ai-from-contract-document-and-send-to-compliance-db",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-contract-document",
+      "name": "Fetch data from Contract document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        160500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/contract-document",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-extract-terms-with-ai",
+      "name": "AI: Extract Terms With Ai",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        160500
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: extract terms with AI"
+      }
+    },
+    {
+      "id": "send-compliance-db",
+      "name": "Send to Compliance DB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        160500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/compliance-db",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-160500",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        160500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Contract document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Contract document": {
+      "main": [
+        {
+          "node": "AI: Extract Terms With Ai",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Extract Terms With Ai": {
+      "main": [
+        [
+          {
+            "node": "AI: Extract Terms With Ai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Compliance DB": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

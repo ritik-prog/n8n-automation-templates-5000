@@ -1,0 +1,136 @@
+{
+  "name": "create-new-hire-equipment-provisioning-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "equipment-request"
+      },
+      "id": "eq1",
+      "name": "New Hire Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; const items=b.items||['Laptop','Monitor']; const priority=b.priority||'standard'; return [{json:{name:b.name,email:b.email,startDate:b.startDate,items,priority}}];"
+      },
+      "id": "eq2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "issue",
+        "projectKey": "IT",
+        "summary": "={{'Provisioning: '+$json.name}}",
+        "description": "={{'Items: '+($json.items||[]).join(', ')+'\\nStart: '+$json.startDate+'\\nPriority: '+$json.priority}}",
+        "additionalFields": {
+          "issuetype": {
+            "name": "Task"
+          }
+        }
+      },
+      "id": "eq3",
+      "name": "Create Jira Ticket",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 2,
+      "position": [
+        540,
+        260
+      ],
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "jira_cred",
+          "name": "Jira Cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "it-ops-sheet-id",
+        "range": "Provisioning!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{($json.items||[]).join(', ')}}",
+          "={{$json.startDate}}",
+          "={{$json.priority}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "eq4",
+      "name": "Log (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#it-ops",
+        "text": "\ud83e\uddf0 Equipment provisioning ticket created for {{$json.name}}"
+      },
+      "id": "eq5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "New Hire Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Create Jira Ticket",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

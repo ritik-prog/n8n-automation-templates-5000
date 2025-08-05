@@ -1,0 +1,277 @@
+{
+  "name": "create-followup-sequences-from-interactions",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/30 * * * *"
+      },
+      "id": "f1",
+      "name": "Every 30 min",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "recent_interaction",
+                "operation": "IS_NOT_EMPTY"
+              }
+            ]
+          }
+        }
+      },
+      "id": "f2",
+      "name": "Fetch Leads (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        330,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst leads = Array.isArray($json)?$json:[$json];\nreturn leads.map(l => ({ json: {\n  email: l.properties?.email, name: (l.properties?.firstname||'')+' '+(l.properties?.lastname||''),\n  lastOpen: l.properties?.last_email_open_date, lastClick: l.properties?.last_click_date,\n  lastReply: l.properties?.last_reply_date, ownerId: l.properties?.hubspot_owner_id\n}}));\n"
+      },
+      "id": "f3",
+      "name": "Normalize Interactions",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Generate a tailored 5-step follow-up sequence. Return JSON {steps:[{dayOffset, channel:'email|call|linkedin', subject?, body?, notes?}], goal}."
+          },
+          {
+            "role": "user",
+            "content": "Lead: {{$json}}"
+          }
+        ]
+      },
+      "id": "f4",
+      "name": "AI Sequence (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        790,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let p;try{p=JSON.parse($json.choices[0].message.content)}catch(e){p={steps:[]}}; const emails=(p.steps||[]).filter(s=>s.channel==='email'); return emails.map(s=>({json:{subject:s.subject||'Checking in',body:s.body||'Hi there',dayOffset:s.dayOffset||0}}));"
+      },
+      "id": "f5",
+      "name": "Extract Email Steps",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst now = new Date(); now.setUTCHours(9,0,0,0);\nconst sendAt = new Date(now.getTime() + ($json.dayOffset||0)*24*3600*1000);\nreturn [{json:{sendAt: sendAt.toISOString(), subject:$json.subject, body:$json.body}}];\n"
+      },
+      "id": "f6",
+      "name": "Compute Send Time",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": "={{new Date($json.sendAt).getUTCHours()}}",
+              "minute": "={{new Date($json.sendAt).getUTCMinutes()}}"
+            }
+          ]
+        }
+      },
+      "id": "f7",
+      "name": "Wait Until",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "sales@yourcompany.com",
+        "toEmail": "={{$prevNode['Normalize Interactions'].json.email}}",
+        "subject": "={{$json.subject}}",
+        "text": "={{$json.body}}"
+      },
+      "id": "f8",
+      "name": "Send Email (SMTP)",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "sequences-log-sheet",
+        "range": "Sequences!A1",
+        "fields": [
+          "={{$prevNode['Normalize Interactions'].json.email}}",
+          "={{$json.subject}}",
+          "={{$json.sendAt}}"
+        ]
+      },
+      "id": "f9",
+      "name": "Log Step",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 30 min": {
+      "main": [
+        [
+          {
+            "node": "Fetch Leads (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Leads (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Interactions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Interactions": {
+      "main": [
+        [
+          {
+            "node": "AI Sequence (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Sequence (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Extract Email Steps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email Steps": {
+      "main": [
+        [
+          {
+            "node": "Compute Send Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Send Time": {
+      "main": [
+        [
+          {
+            "node": "Wait Until",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Until": {
+      "main": [
+        [
+          {
+            "node": "Send Email (SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email (SMTP)": {
+      "main": [
+        [
+          {
+            "node": "Log Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

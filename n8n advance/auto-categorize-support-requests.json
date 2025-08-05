@@ -1,0 +1,149 @@
+{
+  "name": "auto-categorize-support-requests",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incoming-support-request"
+      },
+      "id": "1",
+      "name": "Support Request Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "support-request-hook"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { email: $json.body.email, message: $json.body.message } }];"
+      },
+      "id": "2",
+      "name": "Extract Request Content",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a support assistant. Categorize the message into one of the following categories: 'Billing', 'Technical Issue', 'Feature Request', 'General Inquiry'. Also suggest 2\u20133 tags. Respond in JSON: {category, tags}"
+          },
+          {
+            "role": "user",
+            "content": "{{$json.message}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Categorize & Tag (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst parsed = JSON.parse($json.choices[0].message.content);\nreturn [{\n  json: {\n    email: $json.email,\n    category: parsed.category,\n    tags: parsed.tags\n  }\n}];\n"
+      },
+      "id": "4",
+      "name": "Parse GPT Tags",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "support-categorization-log-id",
+        "range": "SupportRequests!A1",
+        "valueInputMode": "USER_ENTERED",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.category}}",
+          "={{$json.tags}}"
+        ]
+      },
+      "id": "5",
+      "name": "Log to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Support Request Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Request Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Request Content": {
+      "main": [
+        [
+          {
+            "node": "Categorize & Tag (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Categorize & Tag (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse GPT Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse GPT Tags": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

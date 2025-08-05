@@ -1,0 +1,292 @@
+{
+  "name": "auto-generate-utm-codes-and-track-campaign-performance",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "utm-generate"
+      },
+      "id": "ut1",
+      "name": "UTM Generate Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;const base=(b.baseUrl||'https://example.com').replace(/\\/$/,'');const campaign=(b.campaign||('cmp-'+Date.now()));const source=(b.source||'email').toLowerCase();const medium=(b.medium||'email').toLowerCase();const content=b.content||'';const term=b.term||'';const url=base+`?utm_source=${encodeURIComponent(source)}&utm_medium=${encodeURIComponent(medium)}&utm_campaign=${encodeURIComponent(campaign)}&utm_content=${encodeURIComponent(content)}&utm_term=${encodeURIComponent(term)}`;return [{json:{campaign,source,medium,content,term,url}}];"
+      },
+      "id": "ut2",
+      "name": "Build UTM URL",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api-ssl.bitly.com/v4/shorten",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.bitlyToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "long_url": "={{$json.url}}"
+        }
+      },
+      "id": "ut3",
+      "name": "Shorten (Bitly)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "utm-tracking-sheet-id",
+        "range": "Catalog!A1",
+        "fields": [
+          "={{$prevNode['Build UTM URL'].json.campaign}}",
+          "={{$prevNode['Build UTM URL'].json.source}}",
+          "={{$prevNode['Build UTM URL'].json.medium}}",
+          "={{$prevNode['Build UTM URL'].json.content}}",
+          "={{$json.link}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "ut4",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "cronExpression": "0 8 * * *"
+      },
+      "id": "ut5",
+      "name": "Daily 08:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://analyticsdata.googleapis.com/v1beta/properties/{{$credentials.ga4PropertyId}}:runReport",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.gaOauthToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "dateRanges": [
+            {
+              "startDate": "7daysAgo",
+              "endDate": "today"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "sessions"
+            },
+            {
+              "name": "conversions"
+            }
+          ],
+          "dimensions": [
+            {
+              "name": "campaign"
+            },
+            {
+              "name": "source"
+            }
+          ]
+        }
+      },
+      "id": "ut6",
+      "name": "Fetch GA4 (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[];return rows.map(r=>({json:{campaign:r.dimensionValues?.[0]?.value, source:r.dimensionValues?.[1]?.value, sessions:Number(r.metricValues?.[0]?.value||0), conversions:Number(r.metricValues?.[1]?.value||0)}}));"
+      },
+      "id": "ut7",
+      "name": "Normalize GA4",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "utm-tracking-sheet-id",
+        "range": "Performance!A1",
+        "fields": [
+          "={{$json.campaign}}",
+          "={{$json.source}}",
+          "={{$json.sessions}}",
+          "={{$json.conversions}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "ut8",
+      "name": "Append Performance",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        460
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#marketing",
+        "text": "GA4 performance sync done (7d). Top campaign: {{$items().sort((a,b)=>b.json.conversions-a.json.conversions)[0]?.json.campaign||'n/a'}}"
+      },
+      "id": "ut9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        460
+      ]
+    }
+  ],
+  "connections": {
+    "UTM Generate Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build UTM URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build UTM URL": {
+      "main": [
+        [
+          {
+            "node": "Shorten (Bitly)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shorten (Bitly)": {
+      "main": [
+        [
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 08:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch GA4 (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GA4 (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Normalize GA4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize GA4": {
+      "main": [
+        [
+          {
+            "node": "Append Performance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Performance": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

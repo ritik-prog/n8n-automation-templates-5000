@@ -1,0 +1,230 @@
+{
+  "name": "automated-content-calendar-from-trending-topics",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "seed-keywords"
+      },
+      "id": "1",
+      "name": "Webhook (Seed Keywords)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        120,
+        300
+      ],
+      "webhookId": "seed-keywords-in"
+    },
+    {
+      "parameters": {
+        "url": "https://trends.google.com/trends/api/explore",
+        "options": {
+          "queryParametersUi": {
+            "parameter": [
+              {
+                "name": "q",
+                "value": "={{$json.body?.keywords || ''}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "2",
+      "name": "Fetch Google Trends",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        360,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.twitter.com/2/tweets/search/recent",
+        "options": {
+          "queryParametersUi": {
+            "parameter": [
+              {
+                "name": "query",
+                "value": "={{$json.body?.keywords || ''}} lang:en"
+              }
+            ]
+          }
+        },
+        "authentication": "predefinedCredentialType"
+      },
+      "id": "3",
+      "name": "Fetch X/Twitter Trends",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        360,
+        380
+      ],
+      "credentials": {
+        "twitterOAuth2Api": {
+          "id": "twitter_cred",
+          "name": "Twitter OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nreturn [{ json: { trends: { google: $json.data || {}, twitter: $json.data || {} }, seed: $json.body?.keywords || '' } }];\n"
+      },
+      "id": "4",
+      "name": "Merge Trends",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.5,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a content strategist. Build a 30-day content calendar from trends+seed keywords. Output JSON [{date, platform, title, postOutline, targetKeywords}]. Spread across LinkedIn, Blog, Instagram, X."
+          },
+          {
+            "role": "user",
+            "content": "Seed: {{$json.seed}}\\nTrends: {{$json.trends}}"
+          }
+        ]
+      },
+      "id": "5",
+      "name": "Generate Calendar (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        840,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet arr; try { arr = JSON.parse($json.choices[0].message.content); } catch(e){ arr=[]; }\nreturn Array.isArray(arr) ? arr.map(i => ({ json: i })) : [{ json: { error: 'No items' } }];\n"
+      },
+      "id": "6",
+      "name": "Parse Calendar Items",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "content-calendar-sheet-id",
+        "range": "Calendar!A1",
+        "fields": [
+          "={{$json.date}}",
+          "={{$json.platform}}",
+          "={{$json.title}}",
+          "={{$json.postOutline}}",
+          "={{$json.targetKeywords?.join(', ')}}"
+        ]
+      },
+      "id": "7",
+      "name": "Save to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook (Seed Keywords)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Google Trends",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch X/Twitter Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Google Trends": {
+      "main": [
+        [
+          {
+            "node": "Merge Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch X/Twitter Trends": {
+      "main": [
+        [
+          {
+            "node": "Merge Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Trends": {
+      "main": [
+        [
+          {
+            "node": "Generate Calendar (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Calendar (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Calendar Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Calendar Items": {
+      "main": [
+        [
+          {
+            "node": "Save to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

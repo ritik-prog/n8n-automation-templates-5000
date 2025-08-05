@@ -1,0 +1,129 @@
+{
+  "name": "Classify resume with ai from LinkedIn application and send to BambooHR",
+  "nodes": [
+    {
+      "id": "trigger-linkedin-application",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        114800
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "classify-resume-with-ai-from-linkedin-application-and-send-to-bamboohr",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-linkedin-application",
+      "name": "Fetch data from LinkedIn application",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        114800
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/linkedin-application",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-classify-resume-with-ai",
+      "name": "AI: Classify Resume With Ai",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        114800
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: classify resume with AI"
+      }
+    },
+    {
+      "id": "send-bamboohr",
+      "name": "Send to BambooHR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        114800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/bamboohr",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-114800",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        114800
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from LinkedIn application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from LinkedIn application": {
+      "main": [
+        {
+          "node": "AI: Classify Resume With Ai",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Classify Resume With Ai": {
+      "main": [
+        [
+          {
+            "node": "AI: Classify Resume With Ai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to BambooHR": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

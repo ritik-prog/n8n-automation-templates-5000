@@ -1,0 +1,162 @@
+{
+  "name": "auto-create-budget-vs-actual-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 * * 1"
+      },
+      "id": "ba1",
+      "name": "Weekly Mon 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.erp.example.com/v1/budget?fy=current",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.erpToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ba2",
+      "name": "Fetch Budget",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/actuals?period=mtd",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ba3",
+      "name": "Fetch Actuals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst budget = ($items(0).item.json.lines||[]);\nconst actuals = ($items(1).item.json.lines||[]);\nconst mapA = new Map(actuals.map(a=>[a.account, a.amount]));\nconst rows = budget.map(b=>{\n  const act = mapA.get(b.account)||0;\n  const varAmt = +(act - b.amount).toFixed(2);\n  const varPct = b.amount ? +((varAmt/b.amount)*100).toFixed(2) : null;\n  return {account:b.account, budget:b.amount, actual:act, variance:varAmt, variancePct:varPct};\n});\nreturn rows.map(r=>({json:r}));\n"
+      },
+      "id": "ba4",
+      "name": "Join & Variance",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "BvA!A1",
+        "fields": [
+          "={{$json.account}}",
+          "={{$json.budget}}",
+          "={{$json.actual}}",
+          "={{$json.variance}}",
+          "={{$json.variancePct}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "ba5",
+      "name": "Write to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#fpna",
+        "text": "\ud83d\udcc8 Updated BvA for week. Top variance: check sheet."
+      },
+      "id": "ba6",
+      "name": "Slack FP&A",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Budget",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Actuals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Budget": {
+      "main": [
+        [
+          {
+            "node": "Join & Variance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Actuals": {
+      "main": [
+        [
+          {
+            "node": "Join & Variance",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

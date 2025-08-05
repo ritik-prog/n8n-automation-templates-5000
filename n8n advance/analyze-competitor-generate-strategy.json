@@ -1,0 +1,151 @@
+{
+  "name": "analyze-competitor-generate-strategy",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "competitor-content-upload"
+      },
+      "id": "1",
+      "name": "Competitor Content Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "competitor-content"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { competitor: $json.body.competitor, content: $json.body.content } }];"
+      },
+      "id": "2",
+      "name": "Extract Competitor Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a marketing strategist. Analyze the following competitor content and generate a strategy report in JSON format. Include: strengths, weaknesses, content themes, engagement tactics, recommended response strategy."
+          },
+          {
+            "role": "user",
+            "content": "Competitor: {{$json.competitor}}\n\nContent:\n{{$json.content}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Strategy Report (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = JSON.parse($json.choices[0].message.content); return [{ json: data }];"
+      },
+      "id": "4",
+      "name": "Parse Strategy Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "competitor-strategy-report-id",
+        "range": "Reports!A1",
+        "valueInputMode": "USER_ENTERED",
+        "fields": [
+          "={{$json.strengths}}",
+          "={{$json.weaknesses}}",
+          "={{$json.contentThemes}}",
+          "={{$json.engagementTactics}}",
+          "={{$json.recommendedResponseStrategy}}"
+        ]
+      },
+      "id": "5",
+      "name": "Save Strategy to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Competitor Content Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Competitor Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Competitor Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Strategy Report (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Strategy Report (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Strategy Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Strategy Report": {
+      "main": [
+        [
+          {
+            "node": "Save Strategy to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

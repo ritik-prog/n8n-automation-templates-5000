@@ -1,0 +1,137 @@
+{
+  "name": "auto-update-employee-directories-from-hris",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 */6 * * *"
+      },
+      "id": "du1",
+      "name": "Every 6 hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.bamboohr.com/api/gateway.php/yourcompany/v1/employees/directory",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Basic {{$credentials.bambooToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "du2",
+      "name": "Fetch Directory (HRIS)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const emps=$json.employees||$json||[]; const rows=(Array.isArray(emps)?emps:[emps]).map(e=>({json:{name:e.firstName+' '+e.lastName,email:e.workEmail,dept:e.department,location:e.location,title:e.jobTitle}})); return rows;"
+      },
+      "id": "du3",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "directory-sheet-id",
+        "range": "Directory!A1",
+        "fields": [
+          "={{$json.name}}",
+          "={{$json.email}}",
+          "={{$json.dept}}",
+          "={{$json.location}}",
+          "={{$json.title}}"
+        ]
+      },
+      "id": "du4",
+      "name": "Write Directory (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "\ud83d\udcc7 Directory updated ({{=$items().length}} records)."
+      },
+      "id": "du5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Every 6 hours": {
+      "main": [
+        [
+          {
+            "node": "Fetch Directory (HRIS)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Directory (HRIS)": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Write Directory (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,129 @@
+{
+  "name": "Score lead with ai from Google Ads and send to Gmail",
+  "nodes": [
+    {
+      "id": "trigger-google-ads",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        37600
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "score-lead-with-ai-from-google-ads-and-send-to-gmail",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-google-ads",
+      "name": "Fetch data from Google Ads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        37600
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/google-ads",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-score-lead-with-ai",
+      "name": "AI: Score Lead With Ai",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        37600
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: score lead with AI"
+      }
+    },
+    {
+      "id": "send-gmail",
+      "name": "Send to Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        37600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/gmail",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-37600",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        37600
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Google Ads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Google Ads": {
+      "main": [
+        {
+          "node": "AI: Score Lead With Ai",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Score Lead With Ai": {
+      "main": [
+        [
+          {
+            "node": "AI: Score Lead With Ai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Gmail": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

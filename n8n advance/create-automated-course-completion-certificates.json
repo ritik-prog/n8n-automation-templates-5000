@@ -1,0 +1,183 @@
+{
+  "name": "create-automated-course-completion-certificates",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lms-completed"
+      },
+      "id": "cc1",
+      "name": "LMS Completion Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b=$json.body||$json;\nif(!b.studentEmail || !b.studentName || !b.courseName) throw new Error('Missing fields');\nconst id='cert-'+Date.now();\nconst date=new Date().toISOString().slice(0,10);\nconst html=`<!doctype html><html><head><meta charset='utf-8'><style>\nbody{font-family:Arial;text-align:center;padding:60px;background:#fdfdfd}\nh1{font-size:28px} .name{font-size:24px;margin:12px 0} .course{font-size:18px;color:#444}\n</style></head><body><h1>Certificate of Completion</h1>\n<div class='name'>${b.studentName}</div>\n<div class='course'>has successfully completed <b>${b.courseName}</b></div>\n<div>Date: ${date}</div><div>ID: ${id}</div></body></html>`;\nreturn [{json:{id,date,studentEmail:b.studentEmail, studentName:b.studentName, courseName:b.courseName, html, fileName:`${id}.pdf`}}];\n"
+      },
+      "id": "cc2",
+      "name": "Compose Certificate",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.pdf-service.example.com/render",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pdfServiceToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "html": "={{$json.html}}",
+          "fileName": "={{$json.fileName}}",
+          "margin": "10mm"
+        }
+      },
+      "id": "cc3",
+      "name": "HTML \u2192 PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "resource": "file",
+        "binaryData": false,
+        "additionalFields": {
+          "fileName": "={{$json.fileName}}",
+          "binaryPropertyName": "data"
+        },
+        "bucketName": "certificates",
+        "fileContent": "={{$json.html}}"
+      },
+      "id": "cc4",
+      "name": "Upload to S3 (HTML fallback)",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        760,
+        380
+      ],
+      "credentials": {
+        "s3": {
+          "id": "s3_cred",
+          "name": "S3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "no-reply@school.edu",
+        "toEmail": "={{$json.studentEmail}}",
+        "subject": "Your Course Certificate",
+        "text": "Hi {{$json.studentName}}, your certificate for {{$json.courseName}} is attached / available in your portal."
+      },
+      "id": "cc5",
+      "name": "Email Student",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "edu-health-ops-sheet-id",
+        "range": "Certificates!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.id}}",
+          "={{$json.studentEmail}}",
+          "={{$json.courseName}}"
+        ]
+      },
+      "id": "cc6",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "LMS Completion Webhook": {
+      "main": [
+        [
+          {
+            "node": "Compose Certificate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Certificate": {
+      "main": [
+        [
+          {
+            "node": "HTML \u2192 PDF",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Student",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload to S3 (HTML fallback)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

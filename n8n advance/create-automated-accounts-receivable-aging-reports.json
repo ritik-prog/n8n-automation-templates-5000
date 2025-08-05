@@ -1,0 +1,108 @@
+{
+  "name": "create-automated-accounts-receivable-aging-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * 1"
+      },
+      "id": "ar1",
+      "name": "Weekly Mon 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/ar",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ar2",
+      "name": "Fetch AR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst inv=$json.invoices||[];\nfunction bucket(days){\n  if(days<=30) return '0-30';\n  if(days<=60) return '31-60';\n  if(days<=90) return '61-90';\n  return '90+';\n}\nconst now=Date.now();\nconst rows=inv.map(i=>{\n  const d = Math.floor((now - new Date(i.dueDate).getTime())/86400000);\n  return {customer:i.customer.name, number:i.number, due:i.dueDate, amount:i.balance, bucket: bucket(d)};\n});\nreturn rows.map(r=>({json:r}));\n"
+      },
+      "id": "ar3",
+      "name": "Bucketize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "ARAging!A1",
+        "fields": [
+          "={{$json.customer}}",
+          "={{$json.number}}",
+          "={{$json.due}}",
+          "={{$json.amount}}",
+          "={{$json.bucket}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "ar4",
+      "name": "Write to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Mon 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch AR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AR": {
+      "main": [
+        [
+          {
+            "node": "Bucketize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

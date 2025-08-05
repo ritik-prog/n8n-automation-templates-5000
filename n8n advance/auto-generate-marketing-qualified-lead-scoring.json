@@ -1,0 +1,207 @@
+{
+  "name": "auto-generate-marketing-qualified-lead-scoring",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/30 * * * *"
+      },
+      "id": "ms1",
+      "name": "Every 30 minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "resource": "contact"
+      },
+      "id": "ms2",
+      "name": "Get New Contacts (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const contacts=Array.isArray($json)?$json:[$json];const out=[];for(const c of contacts){const p=c.properties||{};const score=(p.pageviews?Math.min(50,Number(p.pageviews)*2):0) + (/(director|vp|head|c-level)/i.test(p.jobtitle||'')?25:0) + (/(software|saas|it)/i.test(p.industry||'')?10:0) + (p.country==='United States'?5:0) + (p.recent_conversion_date?15:0); out.push({json:{vid:c.id,email:p.email,jobtitle:p.jobtitle,industry:p.industry,pageviews:Number(p.pageviews||0),score}});}return out;"
+      },
+      "id": "ms3",
+      "name": "Rule-based Score",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Given a contact's fields, produce an intent score 0-50 based on firmographic fit and recent activities. Return JSON {intent:0-50, rationale}."
+          },
+          {
+            "role": "user",
+            "content": "{{$json}}"
+          }
+        ]
+      },
+      "id": "ms4",
+      "name": "AI Intent Score (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let add=0;try{add=JSON.parse($json.choices[0].message.content).intent||0}catch(e){};return [{json:{...$prevNode['Rule-based Score'].json, intent:add, total: Math.min(100, Math.round(($prevNode['Rule-based Score'].json.score + add)) )}}];"
+      },
+      "id": "ms5",
+      "name": "Combine Scores",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "resource": "contact",
+        "objectId": "={{$json.vid}}",
+        "updateFields": {
+          "propertiesUi": {
+            "property": [
+              {
+                "name": "mql_score",
+                "value": "={{$json.total}}"
+              },
+              {
+                "name": "lifecyclestage",
+                "value": "={{$json.total>=70 ? 'marketingqualifiedlead':'lead'}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ms6",
+      "name": "Update HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#mops",
+        "text": "Lead {{$json.email}} scored {{$json.total}} (rules {{$prevNode['Rule-based Score'].json.score}} + intent {{$json.intent}})."
+      },
+      "id": "ms7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Every 30 minutes": {
+      "main": [
+        [
+          {
+            "node": "Get New Contacts (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Contacts (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Rule-based Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rule-based Score": {
+      "main": [
+        [
+          {
+            "node": "AI Intent Score (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Intent Score (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Combine Scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Scores": {
+      "main": [
+        [
+          {
+            "node": "Update HubSpot Contact",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

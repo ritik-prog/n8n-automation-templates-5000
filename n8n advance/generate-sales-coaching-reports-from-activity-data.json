@@ -1,0 +1,254 @@
+{
+  "name": "generate-sales-coaching-reports-from-activity-data",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 * * 1"
+      },
+      "id": "sr1",
+      "name": "Weekly Mon 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://saleseng.yourcompany.com/api/v1/activities?range=7d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.salesApiKey}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sr2",
+      "name": "Fetch Sales Activities (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const list=Array.isArray($json)?$json:[$json];const byRep={};for(const a of list){const rep=a.owner||'unknown';if(!byRep[rep])byRep[rep]=[];byRep[rep].push(a);}return Object.entries(byRep).map(([rep,items])=>({json:{rep,items}}));"
+      },
+      "id": "sr3",
+      "name": "Group by Rep",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Act as a sales coach. Given a rep's last-week activities (calls, emails, meetings, stages), return JSON {summary, strengths:[...], gaps:[...], coachTips:[...], metrics:{calls,emails,meetings,winRate,avgDealSize}}."
+          },
+          {
+            "role": "user",
+            "content": "Rep {{$json.rep}} activities: {{$json.items}}"
+          }
+        ]
+      },
+      "id": "sr4",
+      "name": "AI Coaching Report",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={summary:'N/A',strengths:[],gaps:[],coachTips:[],metrics:{}}};return [{json:o}];"
+      },
+      "id": "sr5",
+      "name": "Parse JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "notion-coaching-db",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "={{$prevNode['Group by Rep'].json.rep}} Coaching ({{$now}})"
+                }
+              }
+            ]
+          },
+          "Summary": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.summary}}"
+                }
+              }
+            ]
+          },
+          "Metrics": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{JSON.stringify($json.metrics)}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "sr6",
+      "name": "Publish to Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        260
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_cred",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "enablement@yourcompany.com",
+        "toEmail": "={{$prevNode['Group by Rep'].json.rep+'@yourcompany.com'}}",
+        "subject": "Your weekly coaching insights",
+        "text": "Summary: {{$prevNode['Parse JSON'].json.summary}}\\nTop tips: {{($prevNode['Parse JSON'].json.coachTips||[]).join(' | ')}}"
+      },
+      "id": "sr7",
+      "name": "Email the Rep",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        360
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#sales-leadership",
+        "text": "Coaching report posted for {{$prevNode['Group by Rep'].json.rep}}."
+      },
+      "id": "sr8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Sales Activities (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Sales Activities (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Group by Rep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group by Rep": {
+      "main": [
+        [
+          {
+            "node": "AI Coaching Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Coaching Report": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON": {
+      "main": [
+        [
+          {
+            "node": "Publish to Notion",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email the Rep",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

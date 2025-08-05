@@ -1,0 +1,132 @@
+{
+  "name": "auto-update-product-documentation-from-support-insights",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * 1"
+      },
+      "id": "pd1",
+      "name": "Weekly Mon 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/insights/common_issues?range=7d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "pd2",
+      "name": "Fetch Common Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Transform common support issues into doc change recommendations. Return JSON {sections:[{title,changeSummary,docUrl?}] }."
+          },
+          {
+            "role": "user",
+            "content": "Insights: {{$json}}"
+          }
+        ]
+      },
+      "id": "pd3",
+      "name": "AI Generate Doc Changes",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "kb-sheet-id",
+        "range": "DocBacklog!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.choices[0].message.content}}"
+        ]
+      },
+      "id": "pd4",
+      "name": "Save Backlog (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Mon 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Common Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Common Issues": {
+      "main": [
+        [
+          {
+            "node": "AI Generate Doc Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Generate Doc Changes": {
+      "main": [
+        [
+          {
+            "node": "Save Backlog (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

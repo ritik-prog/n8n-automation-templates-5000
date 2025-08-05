@@ -1,0 +1,213 @@
+{
+  "name": "analyze-survey-responses-insight-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "sheetId": "your-survey-sheet-id",
+        "range": "Responses!A1:Z999",
+        "operation": "lookup"
+      },
+      "id": "1",
+      "name": "Google Sheets (Fetch Responses)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        120,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Convert rows to JSON records using header row\nconst rows = $json.rows || [];\nif (!rows.length) return [{ json: { error: 'No survey rows found' } }];\nconst header = rows[0];\nconst records = rows.slice(1).map(r => Object.fromEntries(header.map((h,i)=>[h, r[i]])));\nreturn [{ json: { records } }];\n"
+      },
+      "id": "2",
+      "name": "Normalize Responses",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        360,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an insights analyst. Given survey JSON, produce: keyFindings (bullets), sentimentBreakdown (%), clusters (with labels), topQuotes, and recommendedActions. Keep output as compact JSON."
+          },
+          {
+            "role": "user",
+            "content": "Survey JSON: {{$json.records}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Insights (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        600,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Parse GPT JSON\nlet out;\ntry { out = JSON.parse($json.choices[0].message.content); }\ncatch (e) { out = { error: 'Parse error', raw: $json.choices?.[0]?.message?.content }; }\nreturn [{ json: out }];\n"
+      },
+      "id": "4",
+      "name": "Parse Insights",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "your-notion-database-id",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "Survey Insights - {{$now}}"
+                }
+              }
+            ]
+          },
+          "Key Findings": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.keyFindings?.join('\\n- ')}}"
+                }
+              }
+            ]
+          },
+          "Sentiment": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{JSON.stringify($json.sentimentBreakdown)}}"
+                }
+              }
+            ]
+          },
+          "Actions": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.recommendedActions?.join('\\n- ')}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "5",
+      "name": "Create Notion Report",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        280
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_credential",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#research-insights",
+        "text": "*New Survey Insights*\nKey Findings:\n- {{$json.keyFindings?.join('\\n- ')}}\nActions:\n- {{$json.recommendedActions?.join('\\n- ')}}"
+      },
+      "id": "6",
+      "name": "Notify Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        420
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "slack_credential",
+          "name": "Slack Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Google Sheets (Fetch Responses)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Responses": {
+      "main": [
+        [
+          {
+            "node": "Generate Insights (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Insights (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Insights": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

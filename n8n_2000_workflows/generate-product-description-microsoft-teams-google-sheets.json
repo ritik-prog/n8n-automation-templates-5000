@@ -1,0 +1,129 @@
+{
+  "name": "Generate product description from Microsoft Teams and send to Google Sheets",
+  "nodes": [
+    {
+      "id": "trigger-microsoft-teams",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        28300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-product-description-from-microsoft-teams-and-send-to-google-sheets",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-microsoft-teams",
+      "name": "Fetch data from Microsoft Teams",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        28300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/microsoft-teams",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-generate-product-description",
+      "name": "AI: Generate Product Description",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        28300
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: generate product description"
+      }
+    },
+    {
+      "id": "send-google-sheets",
+      "name": "Send to Google Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        28300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/google-sheets",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-28300",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        28300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Microsoft Teams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Microsoft Teams": {
+      "main": [
+        {
+          "node": "AI: Generate Product Description",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Generate Product Description": {
+      "main": [
+        [
+          {
+            "node": "AI: Generate Product Description",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

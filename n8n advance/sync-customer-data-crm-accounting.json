@@ -1,0 +1,163 @@
+{
+  "name": "sync-customer-data-crm-accounting",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "30 1 * * *"
+      },
+      "id": "sacc1",
+      "name": "Daily 01:30 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "lifecyclestage",
+                "operation": "EQUAL",
+                "value": "customer"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sacc2",
+      "name": "Fetch Customers (HubSpot Companies)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst companies = Array.isArray($json)?$json:[$json];\nreturn companies.map(c => ({ json: {\n  companyName: c.properties?.name || '',\n  domain: c.properties?.domain || '',\n  phone: c.properties?.phone || '',\n  billingStreet: c.properties?.address || '',\n  billingCity: c.properties?.city || '',\n  billingState: c.properties?.state || '',\n  billingPostalCode: c.properties?.zip || '',\n  billingCountry: c.properties?.country || ''\n}}));\n"
+      },
+      "id": "sacc3",
+      "name": "Normalize Company \u2192 Customer",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://quickbooks.api.intuit.com/v3/company/{{ $credentials.qboCompanyId }}/customer",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.qboAccessToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "optionsJson": "={{ { DisplayName: $json.companyName, PrimaryPhone: { FreeFormNumber: $json.phone }, WebAddr: { URI: $json.domain }, BillAddr: { Line1: $json.billingStreet, City: $json.billingCity, CountrySubDivisionCode: $json.billingState, PostalCode: $json.billingPostalCode, Country: $json.billingCountry } } }}"
+      },
+      "id": "sacc4",
+      "name": "Upsert to QuickBooks (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "crm-accounting-sync-log",
+        "range": "Sync!A1",
+        "fields": [
+          "={{$json.companyName}}",
+          "={{$json.domain}}",
+          "={{$now}}",
+          "Upserted to QBO"
+        ]
+      },
+      "id": "sacc5",
+      "name": "Log Sync (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 01:30 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Customers (HubSpot Companies)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Customers (HubSpot Companies)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Company \u2192 Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Company \u2192 Customer": {
+      "main": [
+        [
+          {
+            "node": "Upsert to QuickBooks (HTTP)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Sync (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

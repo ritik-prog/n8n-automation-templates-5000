@@ -1,0 +1,103 @@
+{
+  "name": "Capture lead from Google Ads and send to Freshsales",
+  "nodes": [
+    {
+      "id": "trigger-google-ads",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        36100
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "capture-lead-from-google-ads-and-send-to-freshsales",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-google-ads",
+      "name": "Fetch data from Google Ads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        36100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/google-ads",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-freshsales",
+      "name": "Send to Freshsales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        36100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/freshsales",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-36100",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        36100
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Google Ads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Google Ads": {
+      "main": [
+        {
+          "node": "Send to Freshsales",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Freshsales": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

@@ -1,0 +1,171 @@
+{
+  "name": "google-meet-notes-to-notion",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "google-meet-webhook"
+      },
+      "id": "1",
+      "name": "Google Meet Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "google-meet-meeting-end"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "getTranscript",
+        "meetingId": "={{$json.meeting_id}}"
+      },
+      "id": "2",
+      "name": "Get Google Meet Transcript",
+      "type": "n8n-nodes-custom.googleMeet",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ],
+      "credentials": {
+        "googleMeetOAuth2Api": {
+          "id": "google_meet_credential",
+          "name": "Google Meet"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { transcript: $json.transcript || 'Transcript text here' } }];"
+      },
+      "id": "3",
+      "name": "Extract Transcript",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an assistant that writes professional meeting notes and action points from transcripts."
+          },
+          {
+            "role": "user",
+            "content": "={{$json.transcript}}"
+          }
+        ]
+      },
+      "id": "4",
+      "name": "Generate Meeting Notes with OpenAI",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "your-database-id",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "Meeting Notes - {{$json.date || new Date().toISOString().slice(0, 10)}}"
+                }
+              }
+            ]
+          },
+          "Content": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.choices[0].message.content}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "5",
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_credential",
+          "name": "Notion Integration"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Google Meet Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Google Meet Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Google Meet Transcript": {
+      "main": [
+        [
+          {
+            "node": "Extract Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transcript": {
+      "main": [
+        [
+          {
+            "node": "Generate Meeting Notes with OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Meeting Notes with OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

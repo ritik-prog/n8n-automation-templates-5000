@@ -1,0 +1,103 @@
+{
+  "name": "Sync with github from Notion item and send to GitHub",
+  "nodes": [
+    {
+      "id": "trigger-notion-item",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        157200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sync-with-github-from-notion-item-and-send-to-github",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-notion-item",
+      "name": "Fetch data from Notion item",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        157200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/notion-item",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-github",
+      "name": "Send to GitHub",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        157200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/github",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-157200",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        157200
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Notion item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Notion item": {
+      "main": [
+        {
+          "node": "Send to GitHub",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to GitHub": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

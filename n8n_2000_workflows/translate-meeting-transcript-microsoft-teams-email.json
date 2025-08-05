@@ -1,0 +1,129 @@
+{
+  "name": "Translate meeting transcript from Microsoft Teams and send to Email",
+  "nodes": [
+    {
+      "id": "trigger-microsoft-teams",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        23100
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "translate-meeting-transcript-from-microsoft-teams-and-send-to-email",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-microsoft-teams",
+      "name": "Fetch data from Microsoft Teams",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        23100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/microsoft-teams",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-translate-meeting-transcript",
+      "name": "AI: Translate Meeting Transcript",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        23100
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: translate meeting transcript"
+      }
+    },
+    {
+      "id": "send-email",
+      "name": "Send to Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        23100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/email",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-23100",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        23100
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Microsoft Teams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Microsoft Teams": {
+      "main": [
+        {
+          "node": "AI: Translate Meeting Transcript",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Translate Meeting Transcript": {
+      "main": [
+        [
+          {
+            "node": "AI: Translate Meeting Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Email": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

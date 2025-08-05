@@ -1,0 +1,129 @@
+{
+  "name": "Generate social media captions from Microsoft Teams and send to CRM",
+  "nodes": [
+    {
+      "id": "trigger-microsoft-teams",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        27200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-social-media-captions-from-microsoft-teams-and-send-to-crm",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-microsoft-teams",
+      "name": "Fetch data from Microsoft Teams",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        27200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/microsoft-teams",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-generate-social-media-captions",
+      "name": "AI: Generate Social Media Captions",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        27200
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: generate social media captions"
+      }
+    },
+    {
+      "id": "send-crm",
+      "name": "Send to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        27200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/crm",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-27200",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        27200
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Microsoft Teams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Microsoft Teams": {
+      "main": [
+        {
+          "node": "AI: Generate Social Media Captions",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Generate Social Media Captions": {
+      "main": [
+        [
+          {
+            "node": "AI: Generate Social Media Captions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to CRM": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

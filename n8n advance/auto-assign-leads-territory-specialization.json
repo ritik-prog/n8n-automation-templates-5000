@@ -1,0 +1,302 @@
+{
+  "name": "auto-assign-leads-territory-specialization",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "contact.creation"
+        ]
+      },
+      "id": "a1",
+      "name": "HubSpot New Contact Trigger",
+      "type": "n8n-nodes-base.hubspotTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "hubspotDeveloperApi": {
+          "id": "hubspot_trigger_cred",
+          "name": "HubSpot Trigger OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst p = $json.body?.object?.properties || $json.properties || {};\nconst out = {\n  email: p.email || '',\n  firstName: p.firstname || '',\n  lastName: p.lastname || '',\n  phone: p.phone || '',\n  company: p.company || '',\n  country: (p.country || '').toUpperCase(),\n  region: (p.region || '').toUpperCase(),\n  productInterest: (p.product_interest || '').toLowerCase(),\n  vertical: (p.industry || p.vertical || '').toLowerCase(),\n  ip: p.ip_city || ''\n};\nreturn [{ json: out }];\n"
+      },
+      "id": "a2",
+      "name": "Normalize Lead Fields",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        330,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ipinfo.io/{{ $json.ip }}/json",
+        "authentication": "none"
+      },
+      "id": "a3",
+      "name": "IP \u2192 Geo (ipinfo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        560,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "US-EAST",
+              "value": "US,CA,MX"
+            },
+            {
+              "name": "EMEA",
+              "value": "GB,DE,FR,ES,IT,NL,AE,SA,ZA"
+            },
+            {
+              "name": "APAC",
+              "value": "IN,SG,AU,NZ,JP,KR,ID,PH,TH,VN"
+            }
+          ],
+          "collection": [
+            {
+              "name": "Specialization",
+              "value": {
+                "ProductA": [
+                  "cloud",
+                  "saas"
+                ],
+                "ProductB": [
+                  "on-prem",
+                  "hardware"
+                ],
+                "Security": [
+                  "security",
+                  "sso",
+                  "iam"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "a4",
+      "name": "Routing Tables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        560,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Determine territory from country/region/ipinfo\nconst lead = $prevNode['Normalize Lead Fields'].json;\nconst ipinfo = $prevNode['IP \u2192 Geo (ipinfo)']?.json || {};\nconst country = (lead.country || ipinfo.country || '').toUpperCase();\nlet territory = 'US-EAST';\nconst map = {\n  'US-EAST': ($prevNode['Routing Tables'].json['US-EAST']||'').split(','),\n  'EMEA': ($prevNode['Routing Tables'].json['EMEA']||'').split(','),\n  'APAC': ($prevNode['Routing Tables'].json['APAC']||'').split(','),\n};\nfor (const [terr, arr] of Object.entries(map)) {\n  if (arr.includes(country)) { territory = terr; break; }\n}\n// Determine specialization based on productInterest / vertical keywords\nconst specMap = $prevNode['Routing Tables'].json.Specialization || {};\nconst interest = (lead.productInterest || '') + ' ' + (lead.vertical || '');\nlet specialization = 'General';\nfor (const [spec, keywords] of Object.entries(specMap)) {\n  if (keywords.some(k => interest.includes(k))) { specialization = spec; break; }\n}\n// Round-robin owner within (territory + specialization) group using a deterministic hash of email\nconst ownerPools = {\n  'US-EAST|ProductA': [111111, 111112],\n  'US-EAST|ProductB': [111121, 111122],\n  'EMEA|ProductA': [222211, 222212],\n  'EMEA|ProductB': [222221, 222222],\n  'APAC|Security': [333331, 333332],\n  'DEFAULT': [999999]\n};\nconst poolKey = `${territory}|${specialization}`;\nconst pool = ownerPools[poolKey] || ownerPools['DEFAULT'];\nconst email = (lead.email||'').toLowerCase();\nlet hash = 0; for (let i=0;i<email.length;i++){ hash = ((hash<<5)-hash) + email.charCodeAt(i); hash |= 0; }\nconst idx = Math.abs(hash) % pool.length;\nconst ownerId = pool[idx];\nreturn [{ json: { territory, specialization, ownerId } }];\n"
+      },
+      "id": "a5",
+      "name": "Resolve Territory & Owner",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        790,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "update",
+        "updateFields": {
+          "email": "={{$prevNode['Normalize Lead Fields'].json.email}}",
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hubspot_owner_id",
+                "value": "={{$json.ownerId}}"
+              },
+              {
+                "property": "territory_ai",
+                "value": "={{$json.territory}}"
+              },
+              {
+                "property": "specialization_ai",
+                "value": "={{$json.specialization}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a6",
+      "name": "Update Contact Owner & Fields",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "task",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hs_task_subject",
+                "value": "={{'New Lead Assigned: '+$prevNode['Normalize Lead Fields'].json.company}}"
+              },
+              {
+                "property": "hs_task_priority",
+                "value": "HIGH"
+              },
+              {
+                "property": "hs_task_status",
+                "value": "WAITING"
+              },
+              {
+                "property": "hubspot_owner_id",
+                "value": "={{$prevNode['Resolve Territory & Owner'].json.ownerId}}"
+              },
+              {
+                "property": "hs_task_body",
+                "value": "={{'Territory: '+$prevNode['Resolve Territory & Owner'].json.territory+' | Spec: '+$prevNode['Resolve Territory & Owner'].json.specialization}}"
+              },
+              {
+                "property": "hs_timestamp",
+                "value": "={{$now}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a7",
+      "name": "Create Owner Task",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#lead-routing",
+        "text": "Assigned {{$prevNode['Normalize Lead Fields'].json.email}} \u2192 Owner {{$prevNode['Resolve Territory & Owner'].json.ownerId}} ({{$prevNode['Resolve Territory & Owner'].json.territory}} | {{$prevNode['Resolve Territory & Owner'].json.specialization}})"
+      },
+      "id": "a8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "HubSpot New Contact Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead Fields": {
+      "main": [
+        [
+          {
+            "node": "IP \u2192 Geo (ipinfo)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Routing Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IP \u2192 Geo (ipinfo)": {
+      "main": [
+        [
+          {
+            "node": "Resolve Territory & Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Routing Tables": {
+      "main": [
+        [
+          {
+            "node": "Resolve Territory & Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Territory & Owner": {
+      "main": [
+        [
+          {
+            "node": "Update Contact Owner & Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Contact Owner & Fields": {
+      "main": [
+        [
+          {
+            "node": "Create Owner Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Owner Task": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

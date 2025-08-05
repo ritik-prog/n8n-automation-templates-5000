@@ -1,0 +1,179 @@
+{
+  "name": "auto-moderate-social-content",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "social-content-post"
+      },
+      "id": "1",
+      "name": "Receive Social Content",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "incoming-social-post"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { platform: $json.body.platform, user: $json.body.user, content: $json.body.text } }];"
+      },
+      "id": "2",
+      "name": "Extract Post Info",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a content moderator. Determine if this content violates any guidelines (e.g., hate speech, spam, offensive language). Respond in JSON with fields: status (Approved|Flagged), reason, and suggestedAction."
+          },
+          {
+            "role": "user",
+            "content": "Post: {{$json.content}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Moderate Content (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst result = JSON.parse($json.choices[0].message.content);\nreturn [{\n  json: {\n    ...$json,\n    moderationStatus: result.status,\n    reason: result.reason,\n    suggestedAction: result.suggestedAction\n  }\n}];\n"
+      },
+      "id": "4",
+      "name": "Parse Moderation Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "social-moderation-log-id",
+        "range": "ModerationLog!A1",
+        "valueInputMode": "USER_ENTERED",
+        "fields": [
+          "={{$json.platform}}",
+          "={{$json.user}}",
+          "={{$json.content}}",
+          "={{$json.moderationStatus}}",
+          "={{$json.reason}}",
+          "={{$json.suggestedAction}}"
+        ]
+      },
+      "id": "5",
+      "name": "Log Moderation to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#content-alerts",
+        "text": "\u26a0\ufe0f Post by {{$json.user}} flagged on {{$json.platform}}:\nReason: {{$json.reason}}\nSuggested Action: {{$json.suggestedAction}}"
+      },
+      "id": "6",
+      "name": "Alert Moderation Team (Slack)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        900,
+        450
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "slack_credential",
+          "name": "Slack Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Receive Social Content": {
+      "main": [
+        [
+          {
+            "node": "Extract Post Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Post Info": {
+      "main": [
+        [
+          {
+            "node": "Moderate Content (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Moderate Content (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Moderation Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Moderation Output": {
+      "main": [
+        [
+          {
+            "node": "Log Moderation to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert Moderation Team (Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

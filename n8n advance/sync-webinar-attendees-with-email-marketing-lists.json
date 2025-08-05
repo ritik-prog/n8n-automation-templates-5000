@@ -1,0 +1,117 @@
+{
+  "name": "sync-webinar-attendees-with-email-marketing-lists",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webinar-attendees"
+      },
+      "id": "wb1",
+      "name": "Webinar Webhook (Zoom/GoTo)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;const atts=(b.attendees||[]).map(a=>({json:{email:(a.email||'').toLowerCase(),first:a.firstName,last:a.lastName,attended:!!a.attended}}));return atts;"
+      },
+      "id": "wb2",
+      "name": "Normalize Attendees",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://usX.api.mailchimp.com/3.0/lists/{{$credentials.mailchimpAudienceId}}/members",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.mailchimpToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "email_address": "={{$json.email}}",
+          "status_if_new": "subscribed",
+          "merge_fields": {
+            "FNAME": "={{$json.first}}",
+            "LNAME": "={{$json.last}}"
+          },
+          "tags": [
+            "webinar",
+            "attended-={{$json.attended}}"
+          ]
+        }
+      },
+      "id": "wb3",
+      "name": "Upsert to Mailchimp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#events",
+        "text": "Synced attendee {{$json.email}} to Mailchimp (attended: {{$json.attended}})"
+      },
+      "id": "wb4",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webinar Webhook (Zoom/GoTo)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Attendees",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Attendees": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Mailchimp",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

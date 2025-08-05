@@ -1,0 +1,205 @@
+{
+  "name": "sync-social-media-interactions-with-crm-profiles",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "social-interaction"
+      },
+      "id": "sm1",
+      "name": "Social Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;return [{json:{platform:b.platform, handle:b.handle, kind:b.type, content:b.content, url:b.url, ts:b.timestamp, email:(b.email||'')}}];"
+      },
+      "id": "sm2",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "social-handle-mapping-sheet-id",
+        "range": "Mapping!A2:B999"
+      },
+      "id": "sm3",
+      "name": "Read Handle\u2192Email Map (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        540,
+        220
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[];const map={};for(const r of rows){ if(r[0]&&r[1]) map[r[0].toLowerCase()]=r[1]; } const email=$prevNode['Normalize Payload'].json.email || map[($prevNode['Normalize Payload'].json.handle||'').toLowerCase()] || ''; return [{json:{email}}];"
+      },
+      "id": "sm4",
+      "name": "Resolve Email",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "resource": "contact",
+        "additionalFields": {
+          "email": "={{$json.email || $prevNode['Normalize Payload'].json.email}}"
+        }
+      },
+      "id": "sm5",
+      "name": "Find Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "note",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hs_note_body",
+                "value": "={{'Social '+$prevNode['Normalize Payload'].json.platform+': '+$prevNode['Normalize Payload'].json.kind+' \u2014 '+($prevNode['Normalize Payload'].json.content||'')+' ('+$prevNode['Normalize Payload'].json.url+')'}}"
+              },
+              {
+                "property": "hs_timestamp",
+                "value": "={{$prevNode['Normalize Payload'].json.ts || $now}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sm6",
+      "name": "Create CRM Note",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#social-crm",
+        "text": "Synced social interaction for {{$prevNode['Find Contact'].json.properties?.email || 'unknown'}} from {{$prevNode['Normalize Payload'].json.platform}}"
+      },
+      "id": "sm7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Social Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Read Handle\u2192Email Map (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Handle\u2192Email Map (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Resolve Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Email": {
+      "main": [
+        [
+          {
+            "node": "Find Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Contact": {
+      "main": [
+        [
+          {
+            "node": "Create CRM Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create CRM Note": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

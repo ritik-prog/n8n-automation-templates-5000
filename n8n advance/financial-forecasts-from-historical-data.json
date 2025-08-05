@@ -1,0 +1,175 @@
+{
+  "name": "financial-forecasts-from-historical-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "historical-financials"
+      },
+      "id": "1",
+      "name": "Upload Historical Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        120,
+        320
+      ],
+      "webhookId": "financials-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Expect body: { series: [{date, value}], horizonMonths }\nconst series = $json.body?.series || [];\nconst horizon = Number($json.body?.horizonMonths || 6);\nreturn [{ json: { series, horizon } }];\n"
+      },
+      "id": "2",
+      "name": "Extract Series",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        360,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a financial analyst. Forecast the next N months using the provided time series. Provide JSON {forecast:[{date, value}], method, assumptions, risks}."
+          },
+          {
+            "role": "user",
+            "content": "Series: {{$json.series}}\\nHorizon: {{$json.horizon}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Forecast (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        600,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet out; try { out = JSON.parse($json.choices[0].message.content); } catch(e){ out={forecast:[], method:'LLM', assumptions:[], risks:['Parse error']}; }\nreturn Array.isArray(out.forecast) ? out.forecast.map(p => ({ json: { date:p.date, value:p.value, method: out.method, assumptions: out.assumptions, risks: out.risks } })) : [{ json: out }];\n"
+      },
+      "id": "4",
+      "name": "Parse Forecast Rows",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        840,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "financial-forecast-sheet-id",
+        "range": "Forecast!A1",
+        "fields": [
+          "={{$json.date}}",
+          "={{$json.value}}",
+          "={{$json.method}}",
+          "={{$json.assumptions?.join('; ')}}",
+          "={{$json.risks?.join('; ')}}"
+        ]
+      },
+      "id": "5",
+      "name": "Write to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#finance-updates",
+        "text": "New forecast generated. First point {{$json.date}} => {{$json.value}}. Method: {{$json.method}}"
+      },
+      "id": "6",
+      "name": "Notify Slack (First Row Only)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        320
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "slack_credential",
+          "name": "Slack Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Upload Historical Data": {
+      "main": [
+        [
+          {
+            "node": "Extract Series",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Series": {
+      "main": [
+        [
+          {
+            "node": "Generate Forecast (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Forecast (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Forecast Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Forecast Rows": {
+      "main": [
+        [
+          {
+            "node": "Write to Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Slack (First Row Only)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

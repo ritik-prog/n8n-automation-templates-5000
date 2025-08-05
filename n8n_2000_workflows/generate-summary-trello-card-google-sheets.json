@@ -1,0 +1,129 @@
+{
+  "name": "Generate summary from Trello card and send to Google Sheets",
+  "nodes": [
+    {
+      "id": "trigger-trello-card",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        153300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-summary-from-trello-card-and-send-to-google-sheets",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-trello-card",
+      "name": "Fetch data from Trello card",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        153300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/trello-card",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-generate-summary",
+      "name": "AI: Generate Summary",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        153300
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: generate summary"
+      }
+    },
+    {
+      "id": "send-google-sheets",
+      "name": "Send to Google Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        153300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/google-sheets",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-153300",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        153300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Trello card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Trello card": {
+      "main": [
+        {
+          "node": "AI: Generate Summary",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "AI: Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

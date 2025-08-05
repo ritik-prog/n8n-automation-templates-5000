@@ -1,0 +1,268 @@
+{
+  "name": "create-personalized-retargeting-campaigns",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * *"
+      },
+      "id": "rt1",
+      "name": "Daily 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://analyticsdata.googleapis.com/v1beta/properties/{{$credentials.ga4PropertyId}}:runReport",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.gaOauthToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "dateRanges": [
+            {
+              "startDate": "30daysAgo",
+              "endDate": "today"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "sessions"
+            }
+          ],
+          "dimensions": [
+            {
+              "name": "pageLocation"
+            },
+            {
+              "name": "audienceName"
+            }
+          ]
+        }
+      },
+      "id": "rt2",
+      "name": "Fetch GA4 Audiences (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[];const segs={};for(const r of rows){const aud=r.dimensionValues?.[1]?.value||'all'; segs[aud]=segs[aud]||{urls:[],name:aud}; const url=r.dimensionValues?.[0]?.value||''; if(segs[aud].urls.length<10) segs[aud].urls.push(url);}return Object.values(segs).map(s=>({json:s}));"
+      },
+      "id": "rt3",
+      "name": "Build Segments",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create 2 ad copies and 1 headline per segment. Return JSON {headline, copies:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "Segment {{$json.name}} visited URLs: {{$json.urls}}"
+          }
+        ]
+      },
+      "id": "rt4",
+      "name": "Generate Ad Copy (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let m;try{m=JSON.parse($json.choices[0].message.content)}catch(e){m={headline:'',copies:[]}};return [{json:m}];"
+      },
+      "id": "rt5",
+      "name": "Parse Copy JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v17.0/{{$credentials.facebookAdAccountId}}/customaudiences",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.facebookToken}}"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "name": "={{'Retarget - '+$prevNode['Build Segments'].json.name}}",
+          "subtype": "WEBSITE"
+        }
+      },
+      "id": "rt6",
+      "name": "Create FB Audience",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://googleads.googleapis.com/v11/customers/{{$credentials.googleAdsCustomerId}}/userLists",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleAdsToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "name": "={{'Retarget - '+$prevNode['Build Segments'].json.name}}",
+          "description": "Auto-created by n8n"
+        }
+      },
+      "id": "rt7",
+      "name": "Create Google Audience",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#paid-ads",
+        "text": "Retargeting assets generated for segment {{$prevNode['Build Segments'].json.name}} \u2014 headline: {{$prevNode['Parse Copy JSON'].json.headline}}"
+      },
+      "id": "rt8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch GA4 Audiences (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch GA4 Audiences (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Build Segments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Segments": {
+      "main": [
+        [
+          {
+            "node": "Generate Ad Copy (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Ad Copy (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Copy JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Copy JSON": {
+      "main": [
+        [
+          {
+            "node": "Create FB Audience",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Google Audience",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

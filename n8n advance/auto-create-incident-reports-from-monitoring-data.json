@@ -1,0 +1,198 @@
+{
+  "name": "auto-create-incident-reports-from-monitoring-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incident-resolved"
+      },
+      "id": "ir1",
+      "name": "Incident Resolved Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b=$json.body||$json;\nconst id=b.id||('inc-'+Date.now());\nreturn [{json:{id, started:b.started||'', resolved:b.resolved||'', impact:b.impact||'', root:b.rootCause||'', service:b.service||'unknown'}}];\n"
+      },
+      "id": "ir2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://monitoring.example.com/api/incidents/{{$json.id}}/timeline",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.monitoringToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ir3",
+      "name": "Fetch Timeline (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://cd.example.com/api/deploys?service={{$json.service}}&range=7d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.cdToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ir4",
+      "name": "Fetch Deploys (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst tl=$items(0).item.json.events||[];\nconst dp=$items(1).item.json.deploys||[];\nconst md=`# Incident Report ${$item(0).$node['Normalize'].json.id}\n## Summary\nService: ${$item(0).$node['Normalize'].json.service}\nImpact: ${$item(0).$node['Normalize'].json.impact}\nRoot Cause: ${$item(0).$node['Normalize'].json.root}\nStarted: ${$item(0).$node['Normalize'].json.started}\nResolved: ${$item(0).$node['Normalize'].json.resolved}\n## Timeline\n${tl.map(e=>'- '+e.ts+' \u2014 '+e.msg).join('\\n')}\n## Related Deploys\n${dp.map(d=>'- '+d.time+' '+d.version).join('\\n')}`;\nreturn [{json:{md}}];\n"
+      },
+      "id": "ir5",
+      "name": "Compose Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "page",
+        "space": "OPS",
+        "title": "={{'Incident '+$prevNode['Normalize'].json.id}}",
+        "text": "={{$json.md}}"
+      },
+      "id": "ir6",
+      "name": "Create Confluence Page",
+      "type": "n8n-nodes-base.confluence",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "confluenceApi": {
+          "id": "confluence_cred",
+          "name": "Confluence"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#postmortems",
+        "text": "\ud83d\udcdd Incident report created for {{$prevNode['Normalize'].json.id}}"
+      },
+      "id": "ir7",
+      "name": "Slack PM",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Incident Resolved Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Fetch Timeline (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Deploys (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Timeline (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Compose Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deploys (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Compose Report",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Compose Report": {
+      "main": [
+        [
+          {
+            "node": "Create Confluence Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack PM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

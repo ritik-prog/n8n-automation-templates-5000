@@ -1,0 +1,103 @@
+{
+  "name": "Alert overdue invoice from Stripe payment and send to Xero",
+  "nodes": [
+    {
+      "id": "trigger-stripe-payment",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        127000
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alert-overdue-invoice-from-stripe-payment-and-send-to-xero",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-stripe-payment",
+      "name": "Fetch data from Stripe payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        127000
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/stripe-payment",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-xero",
+      "name": "Send to Xero",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        127000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/xero",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-127000",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        127000
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Stripe payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Stripe payment": {
+      "main": [
+        {
+          "node": "Send to Xero",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Xero": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

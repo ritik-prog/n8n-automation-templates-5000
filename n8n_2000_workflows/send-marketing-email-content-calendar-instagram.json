@@ -1,0 +1,103 @@
+{
+  "name": "Send marketing email from Content calendar and send to Instagram",
+  "nodes": [
+    {
+      "id": "trigger-content-calendar",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        58500
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-marketing-email-from-content-calendar-and-send-to-instagram",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-content-calendar",
+      "name": "Fetch data from Content calendar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        58500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/content-calendar",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-instagram",
+      "name": "Send to Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        58500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/instagram",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-58500",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        58500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Content calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Content calendar": {
+      "main": [
+        {
+          "node": "Send to Instagram",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Instagram": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

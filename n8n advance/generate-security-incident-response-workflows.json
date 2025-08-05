@@ -1,0 +1,211 @@
+{
+  "name": "generate-security-incident-response-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "siem-alert"
+      },
+      "id": "s1",
+      "name": "SIEM Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b=$json.body||$json;\nconst sev=(b.severity||'medium').toLowerCase();\nconst ind=b.indicators||[];\nconst cat=(b.category||'').toLowerCase();\nreturn [{json:{id:b.id||('alert-'+Date.now()), sev, ind, cat, desc:b.description||'', src:b.source||'', account:b.account||'global'}}];\n"
+      },
+      "id": "s2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.1,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Classify and recommend response. Output strict JSON {priority:'P1|P2|P3', actions:string[], owners:string[]}."
+          },
+          {
+            "role": "user",
+            "content": "Alert: {{$json}}"
+          }
+        ]
+      },
+      "id": "s3",
+      "name": "AI Triage (optional)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o={priority:'P2',actions:['isolate host','reset creds'],owners:['secops@company.com']}; try{o=JSON.parse($json.choices[0].message.content)}catch(e){} return [{json:o}];"
+      },
+      "id": "s4",
+      "name": "Parse AI JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "issue",
+        "projectKey": "SEC",
+        "summary": "={{'SEC Incident: '+$prevNode['Normalize'].json.cat+' / '+$prevNode['Normalize'].json.id}}",
+        "description": "={{$prevNode['Normalize'].json.desc}}",
+        "additionalFields": {
+          "issuetype": {
+            "name": "Incident"
+          }
+        }
+      },
+      "id": "s5",
+      "name": "Create Jira Incident",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 2,
+      "position": [
+        980,
+        260
+      ],
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "jira_cred",
+          "name": "Jira Cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#sec-incident",
+        "text": "\ud83d\udea8 {{$json.priority}} incident {{$prevNode['Normalize'].json.id}} \u2014 actions: {{$json.actions.join(', ')}}"
+      },
+      "id": "s6",
+      "name": "Slack War Room",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.pagerduty.com/incidents",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Token token={{$credentials.pagerdutyToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "title": "={{'SEC Incident '+$prevNode['Normalize'].json.id}}",
+          "urgency": "high",
+          "service": {
+            "id": "={{$credentials.pagerDutyServiceId}}",
+            "type": "service_reference"
+          }
+        }
+      },
+      "id": "s7",
+      "name": "PagerDuty P1 (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "SIEM Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "AI Triage (optional)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Triage (optional)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Jira Incident",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack War Room",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "PagerDuty P1 (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

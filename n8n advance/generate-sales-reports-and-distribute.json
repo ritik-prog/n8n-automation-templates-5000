@@ -1,0 +1,251 @@
+{
+  "name": "generate-sales-reports-and-distribute",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 * * 1"
+      },
+      "id": "sr1",
+      "name": "Weekly Cron (Mon 06:00)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst end = new Date();\nconst start = new Date(end.getTime() - 7*24*3600*1000);\nreturn [{ json: { start: start.toISOString(), end: end.toISOString() } }];\n"
+      },
+      "id": "sr2",
+      "name": "Compute Date Range",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "id": "sr3",
+      "name": "Fetch Deals (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst deals = Array.isArray($json) ? $json : [$json];\nconst start = new Date($prevNode['Compute Date Range'].json.start);\nconst end = new Date($prevNode['Compute Date Range'].json.end);\nconst withinRange = deals.filter(d => {\n  const cd = d.properties?.closedate ? new Date(d.properties.closedate) : null;\n  return cd && cd >= start && cd <= end;\n});\nconst summary = { totalClosedAmt: 0, winCount: 0, totalDeals: withinRange.length, byOwner: {}, byStage: {} };\nfor (const d of withinRange) {\n  const amt = Number(d.properties?.amount || 0);\n  const owner = d.properties?.hubspot_owner_id || 'unassigned';\n  const stage = d.properties?.dealstage || 'unknown';\n  summary.totalClosedAmt += amt;\n  if ((stage||'').toLowerCase().includes('closedwon')) summary.winCount += 1;\n  summary.byOwner[owner] = (summary.byOwner[owner] || 0) + amt;\n  summary.byStage[stage] = (summary.byStage[stage] || 0) + amt;\n}\nsummary.winRate = summary.totalDeals ? (summary.winCount / summary.totalDeals) : 0;\nreturn [{ json: { summary, start: start.toISOString(), end: end.toISOString() } }];\n"
+      },
+      "id": "sr4",
+      "name": "Aggregate KPIs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a sales ops analyst. Given KPIs, draft a crisp weekly report with 1) Executive Summary (bullets), 2) Pipeline & Revenue, 3) Top Performers, 4) Risks & Actions. Return JSON {title, execSummary:[...], insights:[...], actions:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "KPIs: {{$json.summary}} (period {{$json.start}} to {{$json.end}})"
+          }
+        ]
+      },
+      "id": "sr5",
+      "name": "Generate Narrative (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet out; try { out = JSON.parse($json.choices[0].message.content); }\ncatch(e){ out={ title:'Weekly Sales Report', execSummary:['Parsing error'], insights:[], actions:[] }; }\nreturn [{ json: out }];\n"
+      },
+      "id": "sr6",
+      "name": "Parse Narrative JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "sales-reporting-sheet-id",
+        "range": "Weekly!A1",
+        "fields": [
+          "={{$prevNode['Compute Date Range'].json.start}}",
+          "={{$prevNode['Compute Date Range'].json.end}}",
+          "={{$json.execSummary?.join('\\n- ')}}",
+          "={{$json.insights?.join('\\n- ')}}",
+          "={{$json.actions?.join('\\n- ')}}"
+        ]
+      },
+      "id": "sr7",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "reports@yourcompany.com",
+        "toEmail": "vp-sales@yourcompany.com, ceo@yourcompany.com",
+        "subject": "={{$json.title}} ({{$prevNode['Compute Date Range'].json.start}} \u2192 {{$prevNode['Compute Date Range'].json.end}})",
+        "text": "*Executive Summary*\\n- {{$json.execSummary?.join('\\n- ')}}\\n\\n*Insights*\\n- {{$json.insights?.join('\\n- ')}}\\n\\n*Actions*\\n- {{$json.actions?.join('\\n- ')}}"
+      },
+      "id": "sr8",
+      "name": "Email to Management",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#leadership-updates",
+        "text": ":bar_chart: *Weekly Sales Report* posted. Period {{$prevNode['Compute Date Range'].json.start}} \u2192 {{$prevNode['Compute Date Range'].json.end}}."
+      },
+      "id": "sr9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1860,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Cron (Mon 06:00)": {
+      "main": [
+        [
+          {
+            "node": "Compute Date Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Date Range": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deals (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deals (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate KPIs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate KPIs": {
+      "main": [
+        [
+          {
+            "node": "Generate Narrative (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Narrative (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Narrative JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Narrative JSON": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email to Management",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

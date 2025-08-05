@@ -1,0 +1,152 @@
+{
+  "name": "generate-automated-prescription-refill-reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 9 * * *"
+      },
+      "id": "pr1",
+      "name": "Daily 09:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ehr.example.com/api/refills_due?within_days=5",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.ehrToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "pr2",
+      "name": "Fetch Refills Due (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst list=$json.patients||[];\nreturn list.map(p=>({json:{patientId:p.id, name:p.name, phone:p.phone, rx:p.rx, daysLeft:p.daysLeft}}));\n"
+      },
+      "id": "pr3",
+      "name": "Normalize List",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.twilio.com/send",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Basic {{$credentials.twilioBasic}}"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "to": "={{$json.phone}}",
+          "from": "+10000000000",
+          "body": "={{'Hi '+$json.name+', your prescription '+$json.rx+' is due in '+$json.daysLeft+' days. Reply REFILL to request or STOP to opt out.'}}"
+        }
+      },
+      "id": "pr4",
+      "name": "Send SMS (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "edu-health-ops-sheet-id",
+        "range": "Refills!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.patientId}}",
+          "={{$json.rx}}",
+          "={{$json.daysLeft}}"
+        ]
+      },
+      "id": "pr5",
+      "name": "Log Reminder",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 09:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Refills Due (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Refills Due (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Normalize List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize List": {
+      "main": [
+        [
+          {
+            "node": "Send SMS (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

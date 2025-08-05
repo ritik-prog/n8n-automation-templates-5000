@@ -1,0 +1,236 @@
+{
+  "name": "auto-generate-offer-letters-from-template-and-candidate-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "offer-letter"
+      },
+      "id": "ol1",
+      "name": "Offer Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;return [{json:{name:b.name,email:b.email,role:b.role,startDate:b.startDate,basePay:b.basePay,currency:b.currency||'USD',templateId:b.templateId||'google-docs-template-id'}}];"
+      },
+      "id": "ol2",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "copyFile",
+        "fileId": "={{$json.templateId}}",
+        "options": {}
+      },
+      "id": "ol3",
+      "name": "Copy Template (Drive)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        540,
+        260
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://docs.googleapis.com/v1/documents/{{$prevNode['Copy Template (Drive)'].json.id}}:batchUpdate",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleapisToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "requests": [
+            {
+              "replaceAllText": {
+                "containsText": {
+                  "text": "{{NAME}}",
+                  "matchCase": true
+                },
+                "replaceText": "={{$prevNode['Normalize Payload'].json.name}}"
+              }
+            },
+            {
+              "replaceAllText": {
+                "containsText": {
+                  "text": "{{ROLE}}",
+                  "matchCase": true
+                },
+                "replaceText": "={{$prevNode['Normalize Payload'].json.role}}"
+              }
+            },
+            {
+              "replaceAllText": {
+                "containsText": {
+                  "text": "{{START_DATE}}",
+                  "matchCase": true
+                },
+                "replaceText": "={{$prevNode['Normalize Payload'].json.startDate}}"
+              }
+            },
+            {
+              "replaceAllText": {
+                "containsText": {
+                  "text": "{{BASE_PAY}}",
+                  "matchCase": true
+                },
+                "replaceText": "={{$prevNode['Normalize Payload'].json.basePay+' '+$prevNode['Normalize Payload'].json.currency}}"
+              }
+            }
+          ]
+        }
+      },
+      "id": "ol4",
+      "name": "Replace Placeholders (Docs API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/drive/v3/files/{{$prevNode['Copy Template (Drive)'].json.id}}/export?mimeType=application/pdf",
+        "authentication": "none",
+        "responseFormat": "string",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleapisToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ol5",
+      "name": "Export PDF (Drive)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "offers@yourcompany.com",
+        "toEmail": "={{$prevNode['Normalize Payload'].json.email}}",
+        "subject": "Your Offer Letter \u2014 {{$prevNode['Normalize Payload'].json.role}}",
+        "text": "Hi {{$prevNode['Normalize Payload'].json.name}},\\nPlease find your offer letter here: https://drive.google.com/file/d/{{$prevNode['Copy Template (Drive)'].json.id}}/view \\nIf you have questions, reply to this email.\\n\\n\u2014 People Ops"
+      },
+      "id": "ol6",
+      "name": "Send Offer Email (SMTP)",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "Offer generated for {{$prevNode['Normalize Payload'].json.name}} ({{$prevNode['Normalize Payload'].json.role}}). Doc {{$prevNode['Copy Template (Drive)'].json.id}}"
+      },
+      "id": "ol7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Offer Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Copy Template (Drive)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Copy Template (Drive)": {
+      "main": [
+        [
+          {
+            "node": "Replace Placeholders (Docs API)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Export PDF (Drive)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Offer Email (SMTP)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

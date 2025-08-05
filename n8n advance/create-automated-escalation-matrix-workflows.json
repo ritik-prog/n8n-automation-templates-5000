@@ -1,0 +1,124 @@
+{
+  "name": "create-automated-escalation-matrix-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ticket-escalate"
+      },
+      "id": "es1",
+      "name": "Escalate Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{id:b.id,priority:b.priority||'high',product:b.product||'core',region:b.region||'global'}}];"
+      },
+      "id": "es2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const m={core:{global:'lead-core@yourcompany.com',eu:'lead-core-eu@yourcompany.com',us:'lead-core-us@yourcompany.com'},payments:{global:'lead-pay@yourcompany.com',us:'lead-pay-us@yourcompany.com'}}; const p=($json.product||'core').toLowerCase(); const r=($json.region||'global').toLowerCase(); const target=(m[p]&&m[p][r])||m['core']['global']; return [{json:{...$json,target}}];"
+      },
+      "id": "es3",
+      "name": "Matrix Lookup",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "support@yourcompany.com",
+        "toEmail": "={{$json.target}}",
+        "subject": "Escalation: Ticket {{$json.id}}",
+        "text": "Priority {{$json.priority}} \u2014 Product {{$json.product}} \u2014 Region {{$json.region}}"
+      },
+      "id": "es4",
+      "name": "Email Escalation Owner",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#support-priority",
+        "text": "\u2b06\ufe0f Escalated {{$json.id}} to {{$json.target}}"
+      },
+      "id": "es5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Escalate Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Matrix Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Matrix Lookup": {
+      "main": [
+        [
+          {
+            "node": "Email Escalation Owner",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

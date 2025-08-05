@@ -1,0 +1,129 @@
+{
+  "name": "Classify ticket with ai from Freshdesk ticket and send to Notion",
+  "nodes": [
+    {
+      "id": "trigger-freshdesk-ticket",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        98500
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "classify-ticket-with-ai-from-freshdesk-ticket-and-send-to-notion",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-freshdesk-ticket",
+      "name": "Fetch data from Freshdesk ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        98500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/freshdesk-ticket",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-classify-ticket-with-ai",
+      "name": "AI: Classify Ticket With Ai",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        98500
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: classify ticket with AI"
+      }
+    },
+    {
+      "id": "send-notion",
+      "name": "Send to Notion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        98500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/notion",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-98500",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        98500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Freshdesk ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Freshdesk ticket": {
+      "main": [
+        {
+          "node": "AI: Classify Ticket With Ai",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Classify Ticket With Ai": {
+      "main": [
+        [
+          {
+            "node": "AI: Classify Ticket With Ai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Notion": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

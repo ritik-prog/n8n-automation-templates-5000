@@ -1,0 +1,129 @@
+{
+  "name": "Analyze meeting sentiment from Zoom and send to Notion",
+  "nodes": [
+    {
+      "id": "trigger-zoom",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        4200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "analyze-meeting-sentiment-from-zoom-and-send-to-notion",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-zoom",
+      "name": "Fetch data from Zoom",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        4200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/zoom",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-analyze-meeting-sentiment",
+      "name": "AI: Analyze Meeting Sentiment",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        4200
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: analyze meeting sentiment"
+      }
+    },
+    {
+      "id": "send-notion",
+      "name": "Send to Notion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        4200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/notion",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-4200",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        4200
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Zoom",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Zoom": {
+      "main": [
+        {
+          "node": "AI: Analyze Meeting Sentiment",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Analyze Meeting Sentiment": {
+      "main": [
+        [
+          {
+            "node": "AI: Analyze Meeting Sentiment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Notion": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

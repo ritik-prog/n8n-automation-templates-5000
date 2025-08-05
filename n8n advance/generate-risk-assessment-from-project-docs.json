@@ -1,0 +1,149 @@
+{
+  "name": "generate-risk-assessment-from-project-docs",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-project-docs"
+      },
+      "id": "1",
+      "name": "Upload Project Documentation",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "project-docs-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { docContent: $json.body.content, projectName: $json.body.projectName } }];"
+      },
+      "id": "2",
+      "name": "Extract Project Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a risk management analyst. Based on the following project documentation, create a structured risk assessment. Include: {risks, severityLevel, likelihood, mitigationPlan}."
+          },
+          {
+            "role": "user",
+            "content": "Project: {{$json.projectName}}\n\nDocumentation:\n{{$json.docContent}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Risk Assessment (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const risk = JSON.parse($json.choices[0].message.content); return [{ json: risk }];"
+      },
+      "id": "4",
+      "name": "Parse Assessment",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "project-risk-assessments-sheet",
+        "range": "Assessments!A1",
+        "fields": [
+          "={{$json.risks.join(', ')}}",
+          "={{$json.severityLevel}}",
+          "={{$json.likelihood}}",
+          "={{$json.mitigationPlan}}"
+        ]
+      },
+      "id": "5",
+      "name": "Log Risk Assessment to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Upload Project Documentation": {
+      "main": [
+        [
+          {
+            "node": "Extract Project Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Project Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Risk Assessment (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Risk Assessment (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Assessment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Assessment": {
+      "main": [
+        [
+          {
+            "node": "Log Risk Assessment to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

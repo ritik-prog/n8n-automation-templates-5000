@@ -1,0 +1,233 @@
+{
+  "name": "create-automated-affiliate-marketing-tracking",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "affiliate-click"
+      },
+      "id": "af1",
+      "name": "Click Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;const email=(b.email||'anon@unknown');const aff=(b.affiliate||'');const linkId=(b.linkId||('L'+Math.random().toString(36).slice(2,8)));return [{json:{email,affiliate:aff,linkId,ts:new Date().toISOString()}}];"
+      },
+      "id": "af2",
+      "name": "Normalize Click",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "affiliate-sheet-id",
+        "range": "Clicks!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.affiliate}}",
+          "={{$json.linkId}}",
+          "={{$json.ts}}"
+        ]
+      },
+      "id": "af3",
+      "name": "Log Click (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        540,
+        220
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "affiliate-conversion"
+      },
+      "id": "af4",
+      "name": "Conversion Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;return [{json:{email:b.email||'',affiliate:b.affiliate||'',amount:Number(b.amount||0),orderId:b.orderId||'',ts:new Date().toISOString()}}];"
+      },
+      "id": "af5",
+      "name": "Normalize Conversion",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "affiliate-sheet-id",
+        "range": "Conversions!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.affiliate}}",
+          "={{$json.amount}}",
+          "={{$json.orderId}}",
+          "={{$json.ts}}"
+        ]
+      },
+      "id": "af6",
+      "name": "Log Conversion (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        540,
+        420
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rate=0.20; return [{json:{payout:+(Number($json.amount||0)*rate).toFixed(2), affiliate:$json.affiliate, orderId:$json.orderId}}];"
+      },
+      "id": "af7",
+      "name": "Compute Payout",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "affiliate-sheet-id",
+        "range": "Payouts!A1",
+        "fields": [
+          "={{$json.affiliate}}",
+          "={{$json.orderId}}",
+          "={{$json.payout}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "af8",
+      "name": "Append Payout (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        420
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#affiliates",
+        "text": "New conversion by {{$prevNode['Normalize Conversion'].json.affiliate}} \u2014 payout ${{$json.payout}} (order {{$json.orderId}})"
+      },
+      "id": "af9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Click Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Click",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Click": {
+      "main": [
+        [
+          {
+            "node": "Log Click (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversion Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Conversion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Conversion": {
+      "main": [
+        [
+          {
+            "node": "Log Conversion (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Compute Payout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Payout": {
+      "main": [
+        [
+          {
+            "node": "Append Payout (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

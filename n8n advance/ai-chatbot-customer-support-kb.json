@@ -1,0 +1,168 @@
+{
+  "name": "ai-chatbot-customer-support-kb",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support-chatbot"
+      },
+      "id": "1",
+      "name": "Chatbot Webhook (Frontend Trigger)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "customer-support-chat"
+    },
+    {
+      "parameters": {
+        "functionCode": "const question = $json.body.question;\nreturn [{ json: { question } }];"
+      },
+      "id": "2",
+      "name": "Extract Customer Query",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "index": "support-kb",
+        "query": "={{$json.question}}"
+      },
+      "id": "3",
+      "name": "Search Knowledge Base (Elasticsearch)",
+      "type": "n8n-nodes-base.elasticSearch",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "elasticSearchApi": {
+          "id": "elasticsearch_credential",
+          "name": "ElasticSearch"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful support assistant. Use the following knowledge base to answer the customer's question. If the answer is not found, politely say that you'll escalate it to a human."
+          },
+          {
+            "role": "user",
+            "content": "Customer Question: {{$json.question}}\n\nKnowledge Base: {{$json.hits.hits[0]._source.content}}"
+          }
+        ]
+      },
+      "id": "4",
+      "name": "Generate AI Response with GPT-4",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { reply: $json.choices[0].message.content } }];"
+      },
+      "id": "5",
+      "name": "Format Chatbot Reply",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Return Chatbot Reply",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Chatbot Webhook (Frontend Trigger)": {
+      "main": [
+        [
+          {
+            "node": "Extract Customer Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Customer Query": {
+      "main": [
+        [
+          {
+            "node": "Search Knowledge Base (Elasticsearch)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Knowledge Base (Elasticsearch)": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Response with GPT-4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Response with GPT-4": {
+      "main": [
+        [
+          {
+            "node": "Format Chatbot Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Chatbot Reply": {
+      "main": [
+        [
+          {
+            "node": "Return Chatbot Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

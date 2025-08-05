@@ -1,0 +1,326 @@
+{
+  "name": "create-personalized-email-content-based-on-user-segments",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 9 * * 1"
+      },
+      "id": "se1",
+      "name": "Weekly Mon 09:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "segments-sheet-id",
+        "range": "Segments!A2:C999"
+      },
+      "id": "se2",
+      "name": "Get Segments (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "resource": "contact"
+      },
+      "id": "se3",
+      "name": "Fetch Contacts (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const segRows=$items().find(i=>i.node.name==='Get Segments (Sheets)')?.json?.rows||[];const contacts=Array.isArray($items().find(i=>i.node.name==='Fetch Contacts (HubSpot)')?.json)?$items().find(i=>i.node.name==='Fetch Contacts (HubSpot)').json:[$items().find(i=>i.node.name==='Fetch Contacts (HubSpot)')?.json];const segDefs=segRows.map(r=>({name:r[0],query:(r[1]||'').toLowerCase(),goal:r[2]}));const buckets={};for(const c of contacts){const props=c?.properties||{};const text=((props.lifecyclestage||'')+' '+(props.industry||'')+' '+(props.country||'')+' '+(props.subscription_status||'')).toLowerCase();for(const s of segDefs){ if(s.query && text.includes(s.query)){ (buckets[s.name]=buckets[s.name]||[]).push({email:props.email, name:props.firstname, company:props.company, goal:s.goal}); break; }}};return Object.entries(buckets).map(([name,list])=>({json:{segment:name,goal:(segDefs.find(s=>s.name===name)||{}).goal, list}}));"
+      },
+      "id": "se4",
+      "name": "Bucketize by Segment",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create a targeted email for the given segment and goal. Return JSON {subject, preheader, htmlBody}."
+          },
+          {
+            "role": "user",
+            "content": "Segment {{$json.segment}} | Goal {{$json.goal}} | Audience sample {{$json.list.slice(0,3)}}"
+          }
+        ]
+      },
+      "id": "se5",
+      "name": "Generate Email (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let m;try{m=JSON.parse($json.choices[0].message.content)}catch(e){m={subject:'Hello',preheader:'',htmlBody:'<p>Hi</p>'}};return [{json:m}];"
+      },
+      "id": "se6",
+      "name": "Parse Email JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://usX.api.mailchimp.com/3.0/campaigns",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.mailchimpToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "type": "regular",
+          "recipients": {
+            "list_id": "{{$credentials.mailchimpListId}}"
+          },
+          "settings": {
+            "subject_line": "={{$json.subject}}",
+            "preview_text": "={{$json.preheader}}",
+            "from_name": "Marketing",
+            "reply_to": "marketing@yourcompany.com"
+          },
+          "tracking": {
+            "opens": true,
+            "html_clicks": true
+          }
+        }
+      },
+      "id": "se7",
+      "name": "Create Campaign (Mailchimp)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json._links ? $json._links.find(l=>l.rel==='content')?.href : ''}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.mailchimpToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "plain_text": "",
+          "html": "={{$prevNode['Parse Email JSON'].json.htmlBody}}"
+        }
+      },
+      "id": "se8",
+      "name": "Set Campaign Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json._links ? $json._links.find(l=>l.rel==='send')?.href : ''}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.mailchimpToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "se9",
+      "name": "Send Campaign",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#lifecycle",
+        "text": "Sent segment {{$prevNode['Bucketize by Segment'].json.segment}} campaign with subject '{{$prevNode['Parse Email JSON'].json.subject}}'."
+      },
+      "id": "se10",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 09:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Get Segments (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Contacts (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Segments (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Bucketize by Segment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Contacts (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Bucketize by Segment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bucketize by Segment": {
+      "main": [
+        [
+          {
+            "node": "Generate Email (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Email (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Email JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Campaign (Mailchimp)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Campaign (Mailchimp)": {
+      "main": [
+        [
+          {
+            "node": "Set Campaign Content",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

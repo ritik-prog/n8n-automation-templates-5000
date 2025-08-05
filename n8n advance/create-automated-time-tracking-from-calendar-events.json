@@ -1,0 +1,161 @@
+{
+  "name": "create-automated-time-tracking-from-calendar-events",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 19 * * 1-5"
+      },
+      "id": "tt1",
+      "name": "Weekdays 19:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin={{encodeURIComponent(new Date(Date.now()-24*3600000).toISOString())}}&timeMax={{encodeURIComponent(new Date().toISOString())}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleCalendarToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "tt2",
+      "name": "Fetch Calendar (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Map events with [#project] tags to time entries\nconst ev=($json.items||[]);\nconst out=[];\nfor(const e of ev){\n  const title=e.summary||'';\n  const m = title.match(/\\[(.*?)\\]/); // [ProjectX]\n  if(!m) continue;\n  const project=m[1];\n  const start=new Date(e.start.dateTime||e.start.date).getTime();\n  const end=new Date(e.end.dateTime||e.end.date).getTime();\n  const hours=Math.max(0,(end-start)/3600000);\n  if(hours>0.1) out.push({project, title, hours});\n}\nreturn out.map(x=>({json:x}));\n"
+      },
+      "id": "tt3",
+      "name": "Extract Time Entries",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.harvestapp.com/v2/time_entries",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.harvestToken}}"
+              },
+              {
+                "name": "Harvest-Account-Id",
+                "value": "{{$credentials.harvestAccountId}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "project_name": "={{$json.project}}",
+          "notes": "={{$json.title}}",
+          "hours": "={{$json.hours}}",
+          "spent_date": "={{$now.split('T')[0]}}"
+        }
+      },
+      "id": "tt4",
+      "name": "Create Harvest Entry (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "pm-ops-sheet-id",
+        "range": "Time!A1",
+        "fields": [
+          "={{$now}}",
+          "=={{$json.project}}",
+          "={{$json.title}}",
+          "={{$json.hours}}"
+        ]
+      },
+      "id": "tt5",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekdays 19:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Calendar (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Calendar (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Extract Time Entries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Time Entries": {
+      "main": [
+        [
+          {
+            "node": "Create Harvest Entry (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

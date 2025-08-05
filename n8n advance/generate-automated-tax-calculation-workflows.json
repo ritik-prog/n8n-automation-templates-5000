@@ -1,0 +1,162 @@
+{
+  "name": "generate-automated-tax-calculation-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 4 1 * *"
+      },
+      "id": "tx1",
+      "name": "Monthly 1st 04:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/sales?period=prev_month",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "tx2",
+      "name": "Fetch Sales by Jurisdiction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst sales=$json.sales||[];\nconst byState={};\nfor(const s of sales){\n  const st=(s.state||'NA').toUpperCase();\n  byState[st]=(byState[st]||0)+Number(s.amount||0);\n}\nreturn Object.entries(byState).map(([state,amount])=>({json:{state,amount}}));\n"
+      },
+      "id": "tx3",
+      "name": "Aggregate by State",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.tax.example.com/v1/calc",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.taxToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "state": "={{$json.state}}",
+          "taxable_amount": "={{$json.amount}}",
+          "period": "prev_month"
+        }
+      },
+      "id": "tx4",
+      "name": "Calculate Tax (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "Tax!A1",
+        "fields": [
+          "={{$json.state}}",
+          "={{$json.amount}}",
+          "={{$json.tax||$json.estimatedTax||0}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "tx5",
+      "name": "Write Tax to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monthly 1st 04:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Sales by Jurisdiction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Sales by Jurisdiction": {
+      "main": [
+        [
+          {
+            "node": "Aggregate by State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate by State": {
+      "main": [
+        [
+          {
+            "node": "Calculate Tax (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Tax (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Write Tax to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

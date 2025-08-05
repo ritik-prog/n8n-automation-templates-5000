@@ -1,0 +1,81 @@
+{
+  "name": "create-automated-first-response-acknowledgments",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ticket-created"
+      },
+      "id": "fr1",
+      "name": "New Ticket Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{id:b.id,email:(b.requester||'').toLowerCase(),subject:b.subject||'',eta:b.eta||'within 1 business day'}}];"
+      },
+      "id": "fr2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "support@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "We got your ticket ({{$json.id}})",
+        "text": "Hi,\\nWe\u2019ve received your request ({{$json.id}}) about '{{$json.subject}}'. Our first response ETA is {{$json.eta}}.\\n\u2014 Support"
+      },
+      "id": "fr3",
+      "name": "Send Ack Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "New Ticket Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Send Ack Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

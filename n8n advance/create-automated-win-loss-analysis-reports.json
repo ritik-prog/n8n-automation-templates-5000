@@ -1,0 +1,244 @@
+{
+  "name": "create-automated-win-loss-analysis-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * 1"
+      },
+      "id": "wl1",
+      "name": "Weekly Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "id": "wl2",
+      "name": "Fetch Deals (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const deals=Array.isArray($json)?$json:[$json];const last7=new Date(Date.now()-7*24*3600*1000);const closed=deals.filter(d=>{const s=(d.properties?.dealstage||'').toLowerCase();const cd=d.properties?.closedate?new Date(d.properties.closedate):null;return cd && cd>=last7 && (s.includes('closedwon')||s.includes('closedlost'));});return [{json:{closed}}];"
+      },
+      "id": "wl3",
+      "name": "Filter last-week closed",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a sales analyst. Produce win/loss analysis: top reasons, competitor mentions, pricing patterns, sales cycle, recommendations. Return JSON {wins:{count,reasons:[...]}, losses:{count,reasons:[...]}, competitors:[...], avgCycleDays, actions:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "Closed deals: {{$json.closed}}"
+          }
+        ]
+      },
+      "id": "wl4",
+      "name": "Analyze (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={wins:{count:0,reasons:[]},losses:{count:0,reasons:[]},competitors:[],avgCycleDays:0,actions:[]}};return [{json:o}];"
+      },
+      "id": "wl5",
+      "name": "Parse JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "notion-winloss-db",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "Win/Loss Report ({{$now}})"
+                }
+              }
+            ]
+          },
+          "Summary": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{'Wins: '+$json.wins.count+' Losses: '+$json.losses.count}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "wl6",
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        260
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_credential",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "winloss-sheet-id",
+        "range": "Weekly!A1",
+        "fields": [
+          "={{$json.wins.count}}",
+          "={{$json.losses.count}}",
+          "={{$json.avgCycleDays}}",
+          "={{($json.competitors||[]).join(', ')}}",
+          "={{($json.actions||[]).join(' | ')}}"
+        ]
+      },
+      "id": "wl7",
+      "name": "Append to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        360
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#sales-insights",
+        "text": "Win/Loss ready \u2014 Wins {{$prevNode['Parse JSON'].json.wins.count}}, Losses {{$prevNode['Parse JSON'].json.losses.count}}. Actions posted."
+      },
+      "id": "wl8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Cron": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deals (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deals (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Filter last-week closed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter last-week closed": {
+      "main": [
+        [
+          {
+            "node": "Analyze (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Append to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

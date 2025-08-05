@@ -1,0 +1,272 @@
+{
+  "name": "auto-create-customer-onboarding-sequences",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "deal.propertyChange"
+        ]
+      },
+      "id": "ob1",
+      "name": "HubSpot Deal Trigger",
+      "type": "n8n-nodes-base.hubspotTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "hubspotDeveloperApi": {
+          "id": "hubspot_trigger_cred",
+          "name": "HubSpot Trigger OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const prop=$json.body?.propertyName;const val=$json.body?.propertyValue||''; if(prop!=='dealstage' || !/closedwon/i.test(val)) return []; return [{json:{dealId:$json.body.objectId}}];"
+      },
+      "id": "ob2",
+      "name": "Gate Closed-Won",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "resource": "deal",
+        "dealId": "={{$json.dealId}}"
+      },
+      "id": "ob3",
+      "name": "Fetch Deal",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "hs_object_id",
+                "operation": "EQUAL",
+                "value": "={{$prevNode['Fetch Deal'].json.properties?.associatedcompanyid}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ob4",
+      "name": "Fetch Company",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        760,
+        240
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create a 30-60-90 day onboarding plan for the new customer. Return JSON {milestones:[{day, title, owner:'CSM|SE|Customer', action, taskBody}], resources:[...], kickoffEmail:{subject,body}}."
+          },
+          {
+            "role": "user",
+            "content": "Deal: {{$prevNode['Fetch Deal'].json}} Company: {{$json}}"
+          }
+        ]
+      },
+      "id": "ob5",
+      "name": "Generate Onboarding Plan",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let plan;try{plan=JSON.parse($json.choices[0].message.content)}catch(e){plan={milestones:[],resources:[],kickoffEmail:{subject:'Welcome!',body:'Hello'}}};const ms=Array.isArray(plan.milestones)?plan.milestones:[];return ms.map(m=>({json:m}));"
+      },
+      "id": "ob6",
+      "name": "Fan-out Milestones",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "task",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hs_task_subject",
+                "value": "={{$json.title}}"
+              },
+              {
+                "property": "hs_task_priority",
+                "value": "HIGH"
+              },
+              {
+                "property": "hs_task_status",
+                "value": "WAITING"
+              },
+              {
+                "property": "hs_task_body",
+                "value": "={{$json.taskBody||''}}"
+              },
+              {
+                "property": "hs_timestamp",
+                "value": "={{$now + ($json.day||0)*24*3600*1000}}"
+              },
+              {
+                "property": "associatedcompanyid",
+                "value": "={{$prevNode['Fetch Deal'].json.properties?.associatedcompanyid}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ob7",
+      "name": "Create Tasks (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#onboarding",
+        "text": "Onboarding sequence created for {{$prevNode['Fetch Deal'].json.properties?.dealname}}."
+      },
+      "id": "ob8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "HubSpot Deal Trigger": {
+      "main": [
+        [
+          {
+            "node": "Gate Closed-Won",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate Closed-Won": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deal": {
+      "main": [
+        [
+          {
+            "node": "Fetch Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Company": {
+      "main": [
+        [
+          {
+            "node": "Generate Onboarding Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Onboarding Plan": {
+      "main": [
+        [
+          {
+            "node": "Fan-out Milestones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan-out Milestones": {
+      "main": [
+        [
+          {
+            "node": "Create Tasks (HubSpot)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

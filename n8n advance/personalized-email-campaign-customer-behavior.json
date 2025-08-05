@@ -1,0 +1,179 @@
+{
+  "name": "personalized-email-campaign-customer-behavior",
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "event",
+        "operation": "trigger",
+        "event": "customer_behavior_event"
+      },
+      "id": "1",
+      "name": "Customer Behavior Trigger",
+      "type": "n8n-nodes-custom.customerBehavior",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { customerId: $json.customerId, behavior: $json.behavior } }];"
+      },
+      "id": "2",
+      "name": "Extract Behavior Info",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "customer",
+        "operation": "get",
+        "customerId": "={{$json.customerId}}"
+      },
+      "id": "3",
+      "name": "Get Customer Details",
+      "type": "n8n-nodes-custom.crm",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "crmApi": {
+          "id": "crm_credential",
+          "name": "CRM API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a marketing assistant creating hyper-personalized email campaigns based on customer behavior and profile."
+          },
+          {
+            "role": "user",
+            "content": "Customer Info: {{$json}}\nBehavior: {{$json.behavior}}\n\nGenerate a promotional email with personalized subject and body."
+          }
+        ]
+      },
+      "id": "4",
+      "name": "Generate Email with GPT-4",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst result = JSON.parse($json.choices[0].message.content);\nreturn [{ json: { subject: result.subject, body: result.body, to: $json.email } }];\n"
+      },
+      "id": "5",
+      "name": "Format Email Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "campaign@yourcompany.com",
+        "toEmail": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "text": "={{$json.body}}"
+      },
+      "id": "6",
+      "name": "Send Personalized Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_credential",
+          "name": "SMTP Email"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Customer Behavior Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Behavior Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Behavior Info": {
+      "main": [
+        [
+          {
+            "node": "Get Customer Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Customer Details": {
+      "main": [
+        [
+          {
+            "node": "Generate Email with GPT-4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Email with GPT-4": {
+      "main": [
+        [
+          {
+            "node": "Format Email Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Output": {
+      "main": [
+        [
+          {
+            "node": "Send Personalized Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

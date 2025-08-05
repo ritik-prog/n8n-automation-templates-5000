@@ -1,0 +1,130 @@
+{
+  "name": "auto-generate-diversity-and-inclusion-reports",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 9 1 */3 *"
+      },
+      "id": "di1",
+      "name": "Quarterly (1st @ 09:00 UTC)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "hr-demographics-sheet-id",
+        "range": "Employees!A2:G999"
+      },
+      "id": "di2",
+      "name": "Load Demographics (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[]; const groups={}; for(const r of rows){ const [name,email,gender,ethnicity,dept,level,location]=r; const key=dept||'Unknown'; if(!groups[key]) groups[key]={count:0,gender:{},ethnicity:{}}; const g=(gender||'Unknown'); const e=(ethnicity||'Unknown'); groups[key].count++; groups[key].gender[g]=(groups[key].gender[g]||0)+1; groups[key].ethnicity[e]=(groups[key].ethnicity[e]||0)+1; } return [{json:{byDept:groups,generated:new Date().toISOString()}}];"
+      },
+      "id": "di3",
+      "name": "Aggregate Metrics",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "dei-report-sheet-id",
+        "range": "Quarterly!A1",
+        "fields": [
+          "={{$json.generated}}",
+          "={{JSON.stringify($json.byDept)}}"
+        ]
+      },
+      "id": "di4",
+      "name": "Write Report (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#dei",
+        "text": "\ud83d\udcd1 New DEI report generated at {{$json.generated}}"
+      },
+      "id": "di5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Quarterly (1st @ 09:00 UTC)": {
+      "main": [
+        [
+          {
+            "node": "Load Demographics (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Demographics (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Metrics": {
+      "main": [
+        [
+          {
+            "node": "Write Report (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

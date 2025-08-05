@@ -1,0 +1,103 @@
+{
+  "name": "Run background check from Resume email and send to Email",
+  "nodes": [
+    {
+      "id": "trigger-resume-email",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        103300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "run-background-check-from-resume-email-and-send-to-email",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-resume-email",
+      "name": "Fetch data from Resume email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        103300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/resume-email",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-email",
+      "name": "Send to Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        103300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/email",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-103300",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        103300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Resume email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Resume email": {
+      "main": [
+        {
+          "node": "Send to Email",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Email": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

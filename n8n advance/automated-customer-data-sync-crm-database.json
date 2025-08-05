@@ -1,0 +1,161 @@
+{
+  "name": "Sync CRM Contact to Database",
+  "nodes": [
+    {
+      "id": "trigger-crm",
+      "name": "HubSpot Contact Created",
+      "type": "n8n-nodes-base.hubspotTrigger",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        200
+      ],
+      "parameters": {
+        "event": "contact.created"
+      }
+    },
+    {
+      "id": "select-postgres",
+      "name": "Lookup Contact in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        200
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM contacts WHERE email = '{{ $json[\"properties\"].email }}'"
+      }
+    },
+    {
+      "id": "if-exists",
+      "name": "Check if Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        100,
+        200
+      ],
+      "parameters": {
+        "rules": [
+          {
+            "type": "boolean",
+            "value1": "={{ $items[0].json.length > 0 }}",
+            "value2": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "update-db",
+      "name": "Update Contact",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        350,
+        100
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE contacts SET name = '{{ $json.properties.firstname }} {{ $json.properties.lastname }}' WHERE email = '{{ $json.properties.email }}'"
+      }
+    },
+    {
+      "id": "insert-db",
+      "name": "Insert Contact",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        350,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO contacts (name, email) VALUES ('{{ $json.properties.firstname }} {{ $json.properties.lastname }}', '{{ $json.properties.email }}')"
+      }
+    },
+    {
+      "id": "error-handler-600-200",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        200
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#data-sync-alerts",
+        "text": "={{ $json[\"error_message\"] || 'Workflow error' }}"
+      }
+    }
+  ],
+  "connections": {
+    "HubSpot Contact Created": {
+      "main": [
+        [
+          {
+            "node": "Lookup Contact in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Contact in DB": {
+      "main": [
+        [
+          {
+            "node": "Check if Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Exists": {
+      "main": [
+        [
+          {
+            "node": "Update Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Contact": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Contact": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

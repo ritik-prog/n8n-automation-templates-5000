@@ -1,0 +1,177 @@
+{
+  "name": "analyze-sales-call-transcripts",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sales-call-upload"
+      },
+      "id": "1",
+      "name": "Sales Call Upload Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "upload-sales-call"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "url": "={{$json.body.transcriptUrl}}"
+      },
+      "id": "2",
+      "name": "Download Transcript",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const transcript = $json.data || 'Sample sales transcript'; return [{ json: { transcript } }];"
+      },
+      "id": "3",
+      "name": "Extract Transcript",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a business analyst specializing in sales. Analyze the call transcript and return a JSON summary with: {clientName, objections, keyInterests, actionItems, sentimentScore (0-10)}."
+          },
+          {
+            "role": "user",
+            "content": "Transcript:\n{{$json.transcript}}"
+          }
+        ]
+      },
+      "id": "4",
+      "name": "Analyze Transcript with GPT-4",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const output = JSON.parse($json.choices[0].message.content); return [{ json: output }];"
+      },
+      "id": "5",
+      "name": "Parse GPT Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "your-sheet-id",
+        "range": "Sales Calls!A1",
+        "valueInputMode": "USER_ENTERED",
+        "options": {},
+        "fields": [
+          "={{$json.clientName}}",
+          "={{$json.keyInterests}}",
+          "={{$json.objections}}",
+          "={{$json.actionItems}}",
+          "={{$json.sentimentScore}}"
+        ]
+      },
+      "id": "6",
+      "name": "Log to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Sales Call Upload Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Transcript": {
+      "main": [
+        [
+          {
+            "node": "Extract Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transcript": {
+      "main": [
+        [
+          {
+            "node": "Analyze Transcript with GPT-4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Transcript with GPT-4": {
+      "main": [
+        [
+          {
+            "node": "Parse GPT Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse GPT Summary": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

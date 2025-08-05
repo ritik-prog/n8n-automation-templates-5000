@@ -1,0 +1,402 @@
+{
+  "name": "auto-qualify-webform-leads-route-sales",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webform-lead"
+      },
+      "id": "w1",
+      "name": "Web Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Validate inputs and normalize\nconst b = $json.body || {};\nif(!b.email || !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(b.email)) {\n  return [{json:{error:'invalid_email', raw:b}}];\n}\nconst out = {\n  email: b.email, firstName: b.firstName||'', lastName: b.lastName||'',\n  company: b.company||'', phone: b.phone||'',\n  country: b.country||'', product: (b.product||'').toLowerCase(),\n  message: b.message||'', ip: b.ip||''\n};\nreturn [{json:out}];\n"
+      },
+      "id": "w2",
+      "name": "Validate & Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        330,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ipinfo.io/{{ $json.ip }}/json",
+        "authentication": "none"
+      },
+      "id": "w3",
+      "name": "Geo Enrichment (ipinfo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        560,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Qualify the lead using CHAMP. Return JSON {qualified:true|false, score:0-100, reason, segment:'Enterprise|MidMarket|SMB', territory:'AMER|EMEA|APAC', timeline:'<30d|30-90d|>90d'}."
+          },
+          {
+            "role": "user",
+            "content": "Lead: {{$json}}\\nGeo: {{$prevNode['Geo Enrichment (ipinfo)'].json}}"
+          }
+        ]
+      },
+      "id": "w4",
+      "name": "AI Qualification (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        780,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let r;try{r=JSON.parse($json.choices[0].message.content)}catch(e){r={qualified:false,score:35,reason:'fallback',segment:'SMB',territory:'AMER',timeline:'>90d'}}; return [{json:r}];"
+      },
+      "id": "w5",
+      "name": "Parse Qual JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "number": [
+            {
+              "name": "AMER",
+              "value": 700001
+            },
+            {
+              "name": "EMEA",
+              "value": 700002
+            },
+            {
+              "name": "APAC",
+              "value": 700003
+            }
+          ]
+        }
+      },
+      "id": "w6",
+      "name": "Territory \u2192 Owner Table",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst t = $prevNode['Parse Qual JSON'].json.territory || 'AMER';\nconst ownerId = Number($json[t] || 700001);\nreturn [{ json: { ownerId } }];\n"
+      },
+      "id": "w7",
+      "name": "Resolve Owner",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "upsert",
+        "additionalFields": {
+          "email": "={{$prevNode['Validate & Normalize'].json.email}}",
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "firstname",
+                "value": "={{$prevNode['Validate & Normalize'].json.firstName}}"
+              },
+              {
+                "property": "lastname",
+                "value": "={{$prevNode['Validate & Normalize'].json.lastName}}"
+              },
+              {
+                "property": "company",
+                "value": "={{$prevNode['Validate & Normalize'].json.company}}"
+              },
+              {
+                "property": "phone",
+                "value": "={{$prevNode['Validate & Normalize'].json.phone}}"
+              },
+              {
+                "property": "product_interest",
+                "value": "={{$prevNode['Validate & Normalize'].json.product}}"
+              },
+              {
+                "property": "lead_score_ai",
+                "value": "={{$prevNode['Parse Qual JSON'].json.score}}"
+              },
+              {
+                "property": "lead_qualified_ai",
+                "value": "={{$prevNode['Parse Qual JSON'].json.qualified}}"
+              },
+              {
+                "property": "lead_reason_ai",
+                "value": "={{$prevNode['Parse Qual JSON'].json.reason}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "w8",
+      "name": "Upsert Contact (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        240
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "update",
+        "updateFields": {
+          "email": "={{$prevNode['Validate & Normalize'].json.email}}",
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hubspot_owner_id",
+                "value": "={{$prevNode['Resolve Owner'].json.ownerId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "w9",
+      "name": "Assign Owner",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        240
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "task",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hs_task_subject",
+                "value": "={{'New qualified lead: '+$prevNode['Validate & Normalize'].json.company}}"
+              },
+              {
+                "property": "hs_task_priority",
+                "value": "HIGH"
+              },
+              {
+                "property": "hs_task_status",
+                "value": "WAITING"
+              },
+              {
+                "property": "hs_timestamp",
+                "value": "={{$now}}"
+              },
+              {
+                "property": "hs_task_body",
+                "value": "={{'Score: '+$prevNode['Parse Qual JSON'].json.score+' Reason: '+$prevNode['Parse Qual JSON'].json.reason}}"
+              },
+              {
+                "property": "hubspot_owner_id",
+                "value": "={{$prevNode['Resolve Owner'].json.ownerId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "w10",
+      "name": "Create Owner Task",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        240
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#lead-routing",
+        "text": "Lead {{$prevNode['Validate & Normalize'].json.email}} routed to owner {{$prevNode['Resolve Owner'].json.ownerId}} (score {{$prevNode['Parse Qual JSON'].json.score}})."
+      },
+      "id": "w11",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "Web Form Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Normalize": {
+      "main": [
+        [
+          {
+            "node": "Geo Enrichment (ipinfo)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI Qualification (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Geo Enrichment (ipinfo)": {
+      "main": [
+        [
+          {
+            "node": "AI Qualification (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Qualification (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Qual JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Qual JSON": {
+      "main": [
+        [
+          {
+            "node": "Territory \u2192 Owner Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Territory \u2192 Owner Table": {
+      "main": [
+        [
+          {
+            "node": "Resolve Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Owner": {
+      "main": [
+        [
+          {
+            "node": "Upsert Contact (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Contact (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Assign Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Owner": {
+      "main": [
+        [
+          {
+            "node": "Create Owner Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Owner Task": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

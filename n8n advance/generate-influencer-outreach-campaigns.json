@@ -1,0 +1,195 @@
+{
+  "name": "generate-influencer-outreach-campaigns",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 10 * * 1"
+      },
+      "id": "if1",
+      "name": "Weekly Mon 10:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "influencers-sheet-id",
+        "range": "Prospects!A2:F999"
+      },
+      "id": "if2",
+      "name": "Read Influencer Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[];return rows.filter(r=> (r[5]||'').toLowerCase()!=='contacted').map(r=>({json:{name:r[0],email:r[1],handle:r[2],niche:r[3],audience:r[4]}}));"
+      },
+      "id": "if3",
+      "name": "Filter Uncontacted",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.25,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Write a concise, personalized influencer outreach email. Return JSON {subject, body}."
+          },
+          {
+            "role": "user",
+            "content": "Influencer {{$json.name}} ({{$json.handle}}), niche {{$json.niche}}, audience {{$json.audience}}."
+          }
+        ]
+      },
+      "id": "if4",
+      "name": "Draft Email (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let m;try{m=JSON.parse($json.choices[0].message.content)}catch(e){m={subject:'Collaboration',body:'Hi'}};return [{json:m}];"
+      },
+      "id": "if5",
+      "name": "Parse Email JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "partnerships@yourcompany.com",
+        "toEmail": "={{$prevNode['Filter Uncontacted'].json.email}}",
+        "subject": "={{$json.subject}}",
+        "text": "={{$json.body}}"
+      },
+      "id": "if6",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#influencer",
+        "text": "Contacted {{$prevNode['Filter Uncontacted'].json.name}} ({{$prevNode['Filter Uncontacted'].json.handle}})."
+      },
+      "id": "if7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 10:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Read Influencer Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Influencer Sheet": {
+      "main": [
+        [
+          {
+            "node": "Filter Uncontacted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Uncontacted": {
+      "main": [
+        [
+          {
+            "node": "Draft Email (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Email (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Email JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email JSON": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

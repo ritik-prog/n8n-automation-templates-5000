@@ -1,0 +1,178 @@
+{
+  "name": "generate-workout-plan-from-fitness-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fitness-data"
+      },
+      "id": "1",
+      "name": "Fitness Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        120,
+        320
+      ],
+      "webhookId": "fitness-data-in"
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst profile = $json.body?.profile || {};\nconst metrics = $json.body?.metrics || {};\nreturn [{ json: { profile, metrics } }];\n"
+      },
+      "id": "2",
+      "name": "Extract Fitness Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        360,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a certified trainer and nutrition coach. Create a 4-week personalized workout plan with weekly schedule, daily workouts, intensity targets, and recovery guidance based on profile and metrics. Return JSON {plan: [{date, workout, intensity, notes}], nutritionTips}."
+          },
+          {
+            "role": "user",
+            "content": "Profile: {{$json.profile}}\\nMetrics: {{$json.metrics}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Plan (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        600,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet out; try { out = JSON.parse($json.choices[0].message.content); } catch(e){ out={ error:'parse', raw:$json.choices?.[0]?.message?.content}; }\nreturn Array.isArray(out.plan) ? out.plan.map(p => ({ json: p })) : [{ json: out }];\n"
+      },
+      "id": "4",
+      "name": "Parse Plan to Items",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        840,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "calendar": "primary",
+        "start": "={{$json.date}}T07:00:00",
+        "end": "={{$json.date}}T08:00:00",
+        "summary": "Workout: {{$json.workout}}",
+        "description": "Intensity: {{$json.intensity}}\\nNotes: {{$json.notes}}"
+      },
+      "id": "5",
+      "name": "Add to Google Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        240
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "gcal_cred",
+          "name": "Google Calendar"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "fitness-plan-sheet-id",
+        "range": "Plan!A1",
+        "fields": [
+          "={{$json.date}}",
+          "={{$json.workout}}",
+          "={{$json.intensity}}",
+          "={{$json.notes}}"
+        ]
+      },
+      "id": "6",
+      "name": "Log Plan to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Fitness Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Fitness Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Fitness Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Plan (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Plan (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Plan to Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Plan to Items": {
+      "main": [
+        [
+          {
+            "node": "Add to Google Calendar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Plan to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

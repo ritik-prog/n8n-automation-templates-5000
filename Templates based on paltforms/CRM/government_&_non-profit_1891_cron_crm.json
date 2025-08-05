@@ -1,0 +1,85 @@
+{
+  "name": "Template 1891",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/6 * * * *"
+      },
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "CRM",
+      "type": "n8n-nodes-base.crm",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Philips Hue",
+      "type": "n8n-nodes-base.philipshue",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM": {
+      "main": [
+        [
+          {
+            "node": "Philips Hue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": 1891
+}

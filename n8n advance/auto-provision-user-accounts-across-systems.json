@@ -1,0 +1,222 @@
+{
+  "name": "auto-provision-user-accounts-across-systems",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hris-new-hire"
+      },
+      "id": "p1",
+      "name": "New Hire Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b=$json.body||$json;\nconst email=(b.email||'').toLowerCase();\nconst role=(b.role||'employee').toLowerCase();\nconst dept=(b.department||'general').toLowerCase();\nconst name=b.name||'User';\nconst start=b.startDate||new Date().toISOString().slice(0,10);\nconst groups=['all-employees', dept];\nif(role.includes('engineer')) groups.push('engineers');\nif(role.includes('manager')) groups.push('managers');\nreturn [{json:{email,role,dept,name,start,groups}}];\n"
+      },
+      "id": "p2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/admin/directory/v1/users",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleAdminToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "primaryEmail": "={{$json.email}}",
+          "name": {
+            "fullName": "={{$json.name}}"
+          },
+          "password": "auto-generated-or-invite",
+          "orgUnitPath": "=/Employees"
+        }
+      },
+      "id": "p3",
+      "name": "Create Google Workspace (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.okta.com/api/v1/users",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "SSWS {{$credentials.oktaToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "profile": {
+            "email": "={{$json.email}}",
+            "login": "={{$json.email}}",
+            "displayName": "={{$json.name}}"
+          },
+          "credentials": {
+            "password": {
+              "value": "TempPass123!"
+            }
+          }
+        }
+      },
+      "id": "p4",
+      "name": "Create Okta (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return ($json.groups||[]).map(g=>({json:{email:$json.email, group:g}}));"
+      },
+      "id": "p5",
+      "name": "Split Groups",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.okta.com/api/v1/groups/{{encodeURIComponent($json.group)}}/users/{{encodeURIComponent($json.email)}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "SSWS {{$credentials.oktaToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "p6",
+      "name": "Add to Group (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "it@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Welcome to {{= $json.dept.toUpperCase() }}",
+        "text": "Your accounts are being provisioned. You will receive separate emails to set your password."
+      },
+      "id": "p7",
+      "name": "Email Welcome",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        280
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "New Hire Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Create Google Workspace (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Okta (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Groups",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Welcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Groups": {
+      "main": [
+        [
+          {
+            "node": "Add to Group (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

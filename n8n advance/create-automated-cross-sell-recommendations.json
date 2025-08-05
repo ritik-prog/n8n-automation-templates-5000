@@ -1,0 +1,263 @@
+{
+  "name": "create-automated-cross-sell-recommendations",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * *"
+      },
+      "id": "xs1",
+      "name": "Daily 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "lifecyclestage",
+                "operation": "EQUAL",
+                "value": "customer"
+              }
+            ]
+          }
+        }
+      },
+      "id": "xs2",
+      "name": "Fetch Companies (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const arr=Array.isArray($json)?$json:[$json];return arr.map(c=>({json:{companyId:c.id,name:c.properties?.name,domain:c.properties?.domain,plan:c.properties?.subscription_plan||'',currentProducts:(c.properties?.products||'').split(',').map(x=>x.trim()).filter(Boolean)}}));"
+      },
+      "id": "xs3",
+      "name": "Normalize Companies",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://dw.yourcompany.com/api/v1/features?domain={{$json.domain}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.dwApiKey}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "xs4",
+      "name": "Fetch Feature Usage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Recommend cross-sell products based on plan, currentProducts, and feature usage. Return JSON {candidates:[{product,reason,priority:1..5}], summary}."
+          },
+          {
+            "role": "user",
+            "content": "Plan: {{$prevNode['Normalize Companies'].json.plan}} Current: {{$prevNode['Normalize Companies'].json.currentProducts}} Usage: {{$json}}"
+          }
+        ]
+      },
+      "id": "xs5",
+      "name": "AI Cross-sell",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let r;try{r=JSON.parse($json.choices[0].message.content)}catch(e){r={candidates:[],summary:'N/A'}};const cs=(r.candidates||[]).slice(0,3);return cs.map(c=>({json:c}));"
+      },
+      "id": "xs6",
+      "name": "Top Candidates",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "task",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hs_task_subject",
+                "value": "={{'Cross-sell: '+$json.product}}"
+              },
+              {
+                "property": "hs_task_priority",
+                "value": "HIGH"
+              },
+              {
+                "property": "hs_task_status",
+                "value": "WAITING"
+              },
+              {
+                "property": "hs_task_body",
+                "value": "={{$json.reason}}"
+              },
+              {
+                "property": "associatedcompanyid",
+                "value": "={{$prevNode['Normalize Companies'].json.companyId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "xs7",
+      "name": "Create Seller Task",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#growth",
+        "text": "Cross-sell candidates for {{$prevNode['Normalize Companies'].json.name}} created."
+      },
+      "id": "xs8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Companies (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Companies (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Companies": {
+      "main": [
+        [
+          {
+            "node": "Fetch Feature Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Feature Usage": {
+      "main": [
+        [
+          {
+            "node": "AI Cross-sell",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Cross-sell": {
+      "main": [
+        [
+          {
+            "node": "Top Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Top Candidates": {
+      "main": [
+        [
+          {
+            "node": "Create Seller Task",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

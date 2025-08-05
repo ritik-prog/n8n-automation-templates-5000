@@ -1,0 +1,172 @@
+{
+  "name": "auto-escalate-tickets-based-on-sla-breaches",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/15 * * * *"
+      },
+      "id": "sla1",
+      "name": "Every 15 minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets?status=open",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sla2",
+      "name": "Fetch Open Tickets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const ts=$json.tickets||$json||[]; const now=Date.now(); const breach=ts.filter(t=> (now - new Date(t.createdAt).getTime())/60000 > (t.slaMinutes||60) && !t.escalated ); return breach.map(t=>({json:{id:t.id,subject:t.subject,owner:t.assignee,emailOwner:t.assigneeEmail}}));"
+      },
+      "id": "sla3",
+      "name": "Detect Breaches",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets/{{$json.id}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "escalated": true,
+          "priority": "high"
+        }
+      },
+      "id": "sla4",
+      "name": "Mark Escalated",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#support-priority",
+        "text": "\ud83d\udea8 SLA Breach on Ticket {{$json.id}} \u2014 {{$json.subject}}. Owner {{$json.owner}}."
+      },
+      "id": "sla5",
+      "name": "Alert Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "support@yourcompany.com",
+        "toEmail": "={{$json.emailOwner}}",
+        "subject": "SLA breach: Ticket {{$json.id}}",
+        "text": "This ticket breached SLA. Please take action immediately."
+      },
+      "id": "sla6",
+      "name": "Email Owner",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        980,
+        360
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 minutes": {
+      "main": [
+        [
+          {
+            "node": "Fetch Open Tickets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Open Tickets": {
+      "main": [
+        [
+          {
+            "node": "Detect Breaches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Breaches": {
+      "main": [
+        [
+          {
+            "node": "Mark Escalated",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alert Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

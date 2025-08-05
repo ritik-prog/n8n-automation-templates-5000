@@ -1,0 +1,136 @@
+{
+  "name": "generate-recruitment-metrics-dashboards",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 * * *"
+      },
+      "id": "rd1",
+      "name": "Daily 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.lever.co/v1/opportunities?updated_at_start={{encodeURIComponent(new Date(Date.now()-30*86400000).toISOString())}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.leverToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "rd2",
+      "name": "Fetch ATS (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const ops=$json.opportunities||$json||[]; const arr=Array.isArray(ops)?ops:[ops]; const stageCounts={}; let hires=0, totalTime=0,count=0; for(const o of arr){ stageCounts[o.stage]=(stageCounts[o.stage]||0)+1; if(o.status==='hired'){hires++; if(o.createdAt&&o.hiredAt){ totalTime+= (new Date(o.hiredAt)-new Date(o.createdAt))/(86400000); count++; }} } const metrics={hires,avgTimeToHire: count? (totalTime/count).toFixed(1):0, byStage:stageCounts}; return [{json:metrics}];"
+      },
+      "id": "rd3",
+      "name": "Compute Metrics",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "recruiting-metrics-sheet-id",
+        "range": "Daily!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.hires}}",
+          "={{$json.avgTimeToHire}}",
+          "={{JSON.stringify($json.byStage)}}"
+        ]
+      },
+      "id": "rd4",
+      "name": "Append Metrics (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#talent",
+        "text": "\ud83d\udcca Recruiting \u2014 hires {{$json.hires}}, avg time-to-hire {{$json.avgTimeToHire}} days."
+      },
+      "id": "rd5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch ATS (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch ATS (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Compute Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Metrics": {
+      "main": [
+        [
+          {
+            "node": "Append Metrics (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

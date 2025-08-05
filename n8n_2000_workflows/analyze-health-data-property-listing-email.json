@@ -1,0 +1,129 @@
+{
+  "name": "Analyze health data from Property listing and send to Email",
+  "nodes": [
+    {
+      "id": "trigger-property-listing",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        188500
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "analyze-health-data-from-property-listing-and-send-to-email",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-property-listing",
+      "name": "Fetch data from Property listing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        188500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/property-listing",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-analyze-health-data",
+      "name": "AI: Analyze Health Data",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        188500
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: analyze health data"
+      }
+    },
+    {
+      "id": "send-email",
+      "name": "Send to Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        188500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/email",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-188500",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        188500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Property listing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Property listing": {
+      "main": [
+        {
+          "node": "AI: Analyze Health Data",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Analyze Health Data": {
+      "main": [
+        [
+          {
+            "node": "AI: Analyze Health Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Email": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

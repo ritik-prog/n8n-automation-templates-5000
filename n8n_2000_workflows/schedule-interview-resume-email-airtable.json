@@ -1,0 +1,103 @@
+{
+  "name": "Schedule interview from Resume email and send to Airtable",
+  "nodes": [
+    {
+      "id": "trigger-resume-email",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        100700
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "schedule-interview-from-resume-email-and-send-to-airtable",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-resume-email",
+      "name": "Fetch data from Resume email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        100700
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/resume-email",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-airtable",
+      "name": "Send to Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        100700
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/airtable",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-100700",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        100700
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Resume email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Resume email": {
+      "main": [
+        {
+          "node": "Send to Airtable",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

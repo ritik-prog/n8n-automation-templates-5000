@@ -1,0 +1,103 @@
+{
+  "name": "Update ticket status from Help desk email and send to Knowledge base",
+  "nodes": [
+    {
+      "id": "trigger-help-desk-email",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        89400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-ticket-status-from-help-desk-email-and-send-to-knowledge-base",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-help-desk-email",
+      "name": "Fetch data from Help desk email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        89400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/help-desk-email",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-knowledge-base",
+      "name": "Send to Knowledge base",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        89400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/knowledge-base",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-89400",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        89400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Help desk email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Help desk email": {
+      "main": [
+        {
+          "node": "Send to Knowledge base",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Knowledge base": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

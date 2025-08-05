@@ -1,0 +1,132 @@
+{
+  "name": "auto-assign-tickets-based-on-agent-expertise",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ticket-created"
+      },
+      "id": "as1",
+      "name": "New Ticket Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; const tags=(b.tags||[]).map(x=>String(x).toLowerCase()); return [{json:{id:b.id,subject:b.subject||'',tags}}];"
+      },
+      "id": "as2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const map={'billing':['refund','invoice','payment'],'api':['api','webhook','auth'],'mobile':['ios','android'],'ui':['ui','ux','css']}; const tags=$json.tags||[]; let assignee='tier1@yourcompany.com'; for(const [agent,skills] of Object.entries({ 'alice@yourcompany.com':map.api,'bob@yourcompany.com':map.billing,'carol@yourcompany.com':map.mobile,'dave@yourcompany.com':map.ui })){ if(tags.some(t=>skills.includes(t))) {assignee=agent; break;} } return [{json:{...$json, assignee}}];"
+      },
+      "id": "as3",
+      "name": "Pick Assignee",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets/{{$json.id}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "assignee": "={{$json.assignee}}"
+        }
+      },
+      "id": "as4",
+      "name": "Assign in Helpdesk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#support",
+        "text": "\ud83c\udfaf Ticket {{$json.id}} assigned to {{$json.assignee}} (tags: {{$json.tags.join(', ')}})"
+      },
+      "id": "as5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "New Ticket Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Pick Assignee",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Assignee": {
+      "main": [
+        [
+          {
+            "node": "Assign in Helpdesk",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,136 @@
+{
+  "name": "auto-update-org-charts-from-hris-changes",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 */12 * * *"
+      },
+      "id": "oc1",
+      "name": "Every 12 hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.bamboohr.com/api/gateway.php/yourcompany/v1/employees/directory",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Basic {{$credentials.bambooToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "oc2",
+      "name": "Fetch Directory (HRIS)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const emps=$json.employees||$json||[]; const rows=(Array.isArray(emps)?emps:[emps]).map(e=>({json:{id:e.workEmail||e.id,name:e.firstName+' '+e.lastName,title:e.jobTitle||'',manager:e.supervisorEmail||e.supervisor}})); return rows;"
+      },
+      "id": "oc3",
+      "name": "Normalize for OrgChart",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "org-chart-sheet-id",
+        "range": "OrgChart!A1",
+        "fields": [
+          "={{$json.id}}",
+          "={{$json.name}}",
+          "={{$json.title}}",
+          "={{$json.manager}}"
+        ]
+      },
+      "id": "oc4",
+      "name": "Write OrgChart (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "\ud83d\udc65 Org chart refreshed ({{=$items().length}} rows)."
+      },
+      "id": "oc5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Every 12 hours": {
+      "main": [
+        [
+          {
+            "node": "Fetch Directory (HRIS)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Directory (HRIS)": {
+      "main": [
+        [
+          {
+            "node": "Normalize for OrgChart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize for OrgChart": {
+      "main": [
+        [
+          {
+            "node": "Write OrgChart (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

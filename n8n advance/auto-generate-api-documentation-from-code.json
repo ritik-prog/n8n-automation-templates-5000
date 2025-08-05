@@ -1,0 +1,147 @@
+{
+  "name": "auto-generate-api-documentation-from-code",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-api-code"
+      },
+      "id": "1",
+      "name": "Upload API Code",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "api-code-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { filename: $json.body.filename, code: $json.body.code } }];"
+      },
+      "id": "2",
+      "name": "Extract Code Content",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You're a senior API technical writer. Generate markdown documentation from the given code. Include endpoint, method, parameters, responses, and example usage."
+          },
+          {
+            "role": "user",
+            "content": "Filename: {{$json.filename}}\n\nCode:\n{{$json.code}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate API Docs (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { filename: $json.filename, documentation: $json.choices[0].message.content } }];"
+      },
+      "id": "4",
+      "name": "Format Markdown Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "api-documentation-tracker",
+        "range": "Docs!A1",
+        "fields": [
+          "={{$json.filename}}",
+          "={{$json.documentation}}"
+        ]
+      },
+      "id": "5",
+      "name": "Store API Documentation",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Upload API Code": {
+      "main": [
+        [
+          {
+            "node": "Extract Code Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Code Content": {
+      "main": [
+        [
+          {
+            "node": "Generate API Docs (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate API Docs (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Format Markdown Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Markdown Output": {
+      "main": [
+        [
+          {
+            "node": "Store API Documentation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,147 @@
+{
+  "name": "create-personalized-product-recommendations",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "user-product-preferences"
+      },
+      "id": "1",
+      "name": "Receive User Preferences",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "product-recommendation-intake"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { name: $json.body.name, preferences: $json.body.preferences, history: $json.body.history } }];"
+      },
+      "id": "2",
+      "name": "Extract User Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.5,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a recommendation engine. Based on user preferences and history, suggest 3 tailored products. Provide reasoning. Format: [{ product, reason }]"
+          },
+          {
+            "role": "user",
+            "content": "User: {{$json.name}}\nPreferences:\n{{$json.preferences}}\nHistory:\n{{$json.history}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate AI Recommendations (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const parsed = JSON.parse($json.choices[0].message.content); return parsed.map(p => ({ json: p }));"
+      },
+      "id": "4",
+      "name": "Parse Recommendations",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "product-recommendations-log",
+        "range": "Recommendations!A1",
+        "fields": [
+          "={{$json.product}}",
+          "={{$json.reason}}"
+        ]
+      },
+      "id": "5",
+      "name": "Save Recommendations to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Receive User Preferences": {
+      "main": [
+        [
+          {
+            "node": "Extract User Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract User Context": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Recommendations (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Recommendations (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Save Recommendations to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

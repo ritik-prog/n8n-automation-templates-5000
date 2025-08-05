@@ -1,0 +1,177 @@
+{
+  "name": "sync-candidate-data-between-ats-and-hris-systems",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 */6 * * *"
+      },
+      "id": "sh1",
+      "name": "Every 6 hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.greenhouse.io/v1/hired_candidates?updated_after={{encodeURIComponent(new Date(Date.now()-24*3600*1000).toISOString())}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Basic {{$credentials.greenhouseToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sh2",
+      "name": "Fetch Hired from ATS (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const cs=$json.candidates||$json||[]; return (Array.isArray(cs)?cs:[cs]).map(c=>({json:{email:c.email||c.contact_email, first:c.first_name||c.firstName, last:c.last_name||c.lastName, title:c.title||c.role, startDate:c.start_date||c.startDate, department:c.department||''}}));"
+      },
+      "id": "sh3",
+      "name": "Normalize Candidates",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.bamboohr.com/api/gateway.php/yourcompany/v1/employees/",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Basic {{$credentials.bambooToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "firstName": "={{$json.first}}",
+          "lastName": "={{$json.last}}",
+          "jobTitle": "={{$json.title}}",
+          "workEmail": "={{$json.email}}",
+          "department": "={{$json.department}}",
+          "hireDate": "={{$json.startDate}}"
+        }
+      },
+      "id": "sh4",
+      "name": "Upsert to HRIS (BambooHR placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "hr-sync-sheet-id",
+        "range": "SyncLog!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.title}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "sh5",
+      "name": "Log Sync (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "Synced hired candidate {{$json.email}} to HRIS."
+      },
+      "id": "sh6",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Every 6 hours": {
+      "main": [
+        [
+          {
+            "node": "Fetch Hired from ATS (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Hired from ATS (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Candidates": {
+      "main": [
+        [
+          {
+            "node": "Upsert to HRIS (BambooHR placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Sync (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

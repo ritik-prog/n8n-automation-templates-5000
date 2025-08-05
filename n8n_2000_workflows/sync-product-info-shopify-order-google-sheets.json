@@ -1,0 +1,103 @@
+{
+  "name": "Sync product info from Shopify order and send to Google Sheets",
+  "nodes": [
+    {
+      "id": "trigger-shopify-order",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        171400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sync-product-info-from-shopify-order-and-send-to-google-sheets",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-shopify-order",
+      "name": "Fetch data from Shopify order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        171400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/shopify-order",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-google-sheets",
+      "name": "Send to Google Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        171400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/google-sheets",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-171400",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        171400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Shopify order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Shopify order": {
+      "main": [
+        {
+          "node": "Send to Google Sheets",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

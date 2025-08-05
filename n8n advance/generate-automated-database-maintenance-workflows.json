@@ -1,0 +1,147 @@
+{
+  "name": "generate-automated-database-maintenance-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 3 * * 0"
+      },
+      "id": "db1",
+      "name": "Weekly Sun 03:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Build a maintenance plan\nconst dbs=[{type:'postgres', host:'db.prod', db:'app'},{type:'postgres', host:'db.analytics', db:'warehouse'}];\nreturn dbs.map(d=>({json:{...d, tasks:['analyze','vacuum','reindex_if_bloat','backup']}}));\n"
+      },
+      "id": "db2",
+      "name": "Plan",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://dbops.example.com/api/maintenance",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.dbOpsToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "task": "={{$json}}"
+        }
+      },
+      "id": "db3",
+      "name": "Run Maintenance (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Evaluate result and detect bloat\nconst r=$json||{}; const bloat=(r.stats && r.stats.bloatPct)||0;\nconst status=bloat>20?'ATTENTION':'OK';\nreturn [{json:{db:$prevNode['Plan'].json.db, host:$prevNode['Plan'].json.host, bloat, status}}];\n"
+      },
+      "id": "db4",
+      "name": "Evaluate",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "devops-ops-sheet-id",
+        "range": "DBMaint!A1",
+        "fields": [
+          "={{$json.host}}",
+          "={{$json.db}}",
+          "={{$json.bloat}}",
+          "={{$json.status}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "db5",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        420
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#db",
+        "text": "\ud83e\uddf0 DB maintenance {{$json.status}} \u2014 {{$json.host}}/{{$json.db}} (bloat {{$json.bloat}}%)"
+      },
+      "id": "db6",
+      "name": "Slack DB",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Sun 03:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan": {
+      "main": [
+        [
+          {
+            "node": "Run Maintenance (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Evaluate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

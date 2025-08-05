@@ -1,0 +1,150 @@
+{
+  "name": "generate-compliance-reports-from-audit-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-audit-data"
+      },
+      "id": "1",
+      "name": "Upload Audit Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "audit-data-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { auditType: $json.body.auditType, auditDetails: $json.body.details } }];"
+      },
+      "id": "2",
+      "name": "Extract Audit Details",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a compliance officer. Based on audit data, generate a formal compliance report. Include sections: Executive Summary, Non-Compliances, Recommendations, Final Rating. Return as structured JSON."
+          },
+          {
+            "role": "user",
+            "content": "Audit Type: {{$json.auditType}}\n\nDetails:\n{{$json.auditDetails}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Compliance Report (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const report = JSON.parse($json.choices[0].message.content); return [{ json: report }];"
+      },
+      "id": "4",
+      "name": "Parse Compliance Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "compliance-reports-log",
+        "range": "Reports!A1",
+        "fields": [
+          "={{$json.auditType}}",
+          "={{$json.summary}}",
+          "={{$json.nonCompliances.join(', ')}}",
+          "={{$json.recommendations.join('; ')}}",
+          "={{$json.rating}}"
+        ]
+      },
+      "id": "5",
+      "name": "Log Report to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Upload Audit Data": {
+      "main": [
+        [
+          {
+            "node": "Extract Audit Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Audit Details": {
+      "main": [
+        [
+          {
+            "node": "Generate Compliance Report (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Compliance Report (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Compliance Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Compliance Report": {
+      "main": [
+        [
+          {
+            "node": "Log Report to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

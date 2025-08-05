@@ -1,0 +1,187 @@
+{
+  "name": "sync-customer-reviews-across-marketing-platforms",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "review"
+      },
+      "id": "rv1",
+      "name": "Review Webhook (G2/Google)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;return [{json:{source:b.source||'g2', rating:Number(b.rating||0), title:b.title||'', body:b.body||'', author:b.author||'', url:b.url||''}}];"
+      },
+      "id": "rv2",
+      "name": "Normalize Review",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Classify review sentiment and extract highlights. Return JSON {sentiment:'pos|neg|neu', highlights:[...], publishable: boolean}."
+          },
+          {
+            "role": "user",
+            "content": "Review {{$json}}"
+          }
+        ]
+      },
+      "id": "rv3",
+      "name": "Moderate & Classify (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={sentiment:'neu',highlights:[],publishable:true}};return [{json:o}];"
+      },
+      "id": "rv4",
+      "name": "Parse Moderation JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.webflow.com/collections/{{$credentials.webflowReviewsCollection}}/items",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.webflowToken}}"
+              },
+              {
+                "name": "accept-version",
+                "value": "1.0.0"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "fields": {
+            "name": "={{$prevNode['Normalize Review'].json.title}}",
+            "slug": "={{($prevNode['Normalize Review'].json.title||'review').toLowerCase().replace(/[^a-z0-9]+/g,'-')}}",
+            "_draft": false,
+            "_archived": false,
+            "rating": "={{$prevNode['Normalize Review'].json.rating}}",
+            "body": "={{$prevNode['Normalize Review'].json.body}}",
+            "source": "={{$prevNode['Normalize Review'].json.source}}",
+            "author": "={{$prevNode['Normalize Review'].json.author}}",
+            "url": "={{$prevNode['Normalize Review'].json.url}}"
+          }
+        }
+      },
+      "id": "rv5",
+      "name": "Publish to Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#social",
+        "text": "New {{$prevNode['Normalize Review'].json.source}} review ({{$prevNode['Normalize Review'].json.rating}}\u2605): {{$prevNode['Normalize Review'].json.title}}"
+      },
+      "id": "rv6",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        340
+      ]
+    }
+  ],
+  "connections": {
+    "Review Webhook (G2/Google)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Review": {
+      "main": [
+        [
+          {
+            "node": "Moderate & Classify (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Moderate & Classify (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Moderation JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Moderation JSON": {
+      "main": [
+        [
+          {
+            "node": "Publish to Website",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,209 @@
+{
+  "name": "auto-create-support-tickets-from-emails-and-route-by-priority",
+  "nodes": [
+    {
+      "parameters": {
+        "downloadAttachments": false,
+        "options": {
+          "criteria": "UNSEEN"
+        },
+        "mailbox": "INBOX",
+        "allowUnauthorizedCerts": false
+      },
+      "id": "em1",
+      "name": "Email (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ],
+      "credentials": {
+        "imap": "imap_support_cred"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const h=$json.headers||{}; const from=(h.from||$json.from||'').toLowerCase(); const subject=$json.subject||''; const body=($json.text||$json.html||'').slice(0,15000); return [{json:{from,subject,body}}];"
+      },
+      "id": "em2",
+      "name": "Normalize Email",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.1,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Classify support email. Return strict JSON {priority:'low|medium|high|urgent', product:string, intent:string, tags:string[]}."
+          },
+          {
+            "role": "user",
+            "content": "Subject: {{$json.subject}}\\nBody: {{$json.body}}"
+          }
+        ]
+      },
+      "id": "em3",
+      "name": "AI Triage",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let out={priority:'medium',product:'',intent:'',tags:[]};try{out=JSON.parse($json.choices[0].message.content)}catch(e){} return [{json:{...$prevNode['Normalize Email'].json,...out}}];"
+      },
+      "id": "em4",
+      "name": "Parse AI JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "requester": "={{$json.from}}",
+          "subject": "={{$json.subject}}",
+          "description": "={{$json.body}}",
+          "priority": "={{$json.priority}}",
+          "tags": "={{$json.tags}}",
+          "product": "={{$json.product}}"
+        }
+      },
+      "id": "em5",
+      "name": "Create Ticket (Helpdesk)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const pr=$json.priority||'medium'; const channel= pr==='urgent'||pr==='high' ? '#support-priority' : '#support'; return [{json:{channel,text:`New ${pr.toUpperCase()} ticket from ${$json.from}: ${$json.subject}`}}];"
+      },
+      "id": "em6",
+      "name": "Choose Slack Channel",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "={{$json.channel}}",
+        "text": "={{$json.text}}"
+      },
+      "id": "em7",
+      "name": "Notify Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        380
+      ]
+    }
+  ],
+  "connections": {
+    "Email (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Email": {
+      "main": [
+        [
+          {
+            "node": "AI Triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Triage": {
+      "main": [
+        [
+          {
+            "node": "Parse AI JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Ticket (Helpdesk)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Choose Slack Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Choose Slack Channel": {
+      "main": [
+        [
+          {
+            "node": "Notify Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,179 @@
+{
+  "name": "Classify Resume and Send Response",
+  "nodes": [
+    {
+      "id": "trigger-email",
+      "name": "New Resume Email",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        800
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyHour"
+            }
+          ]
+        },
+        "filters": {
+          "item": [
+            {
+              "from": "careers@company.com"
+            },
+            {
+              "subject": "Application"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "download-resume",
+      "name": "Download Resume",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        800
+      ],
+      "parameters": {
+        "operation": "getAttachment",
+        "messageId": "={{ $json.id }}"
+      }
+    },
+    {
+      "id": "classify-resume",
+      "name": "Classify Candidate with AI",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        800
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Classify the following resume for role fit and extract key skills: {{ $binary.data }}. Return a JSON with fields: match (true/false), role, skills, summary.",
+        "temperature": 0
+      }
+    },
+    {
+      "id": "update-sheet",
+      "name": "Update Candidate Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        300,
+        750
+      ],
+      "parameters": {
+        "operation": "append",
+        "sheetId": "={{ $env.CANDIDATE_SHEET_ID }}",
+        "range": "Candidates!A:D",
+        "data": "={{ [$json.name, $json.skills.join(', '), $json.role, $json.match] }}"
+      }
+    },
+    {
+      "id": "send-reply",
+      "name": "Send Candidate Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        300,
+        850
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "to": "={{ $json.email }}",
+        "subject": "Your Application",
+        "message": "={{ $json.match ? 'Thank you for applying. We will be in touch soon.' : 'Thank you for your interest, but we are moving forward with other candidates.' }}"
+      }
+    },
+    {
+      "id": "error-handler-600-800",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        800
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#hr-alerts",
+        "text": "={{ $json[\"error_message\"] || 'Workflow error' }}"
+      }
+    }
+  ],
+  "connections": {
+    "New Resume Email": {
+      "main": [
+        [
+          {
+            "node": "Download Resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Resume": {
+      "main": [
+        [
+          {
+            "node": "Classify Candidate with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Candidate with AI": {
+      "main": [
+        [
+          {
+            "node": "Update Candidate Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Candidate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Candidate Sheet": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Candidate Email": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

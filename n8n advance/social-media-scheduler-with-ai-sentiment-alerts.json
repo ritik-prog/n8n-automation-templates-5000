@@ -1,0 +1,224 @@
+{
+  "name": "Schedule and Analyze Social Posts",
+  "nodes": [
+    {
+      "id": "trigger-schedule",
+      "name": "On Schedule",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        400
+      ],
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyHour"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fetch-posts",
+      "name": "Get Scheduled Posts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        400
+      ],
+      "parameters": {
+        "operation": "getMany",
+        "sheetId": "={{ $env.SCHEDULE_SHEET_ID }}",
+        "range": "Posts!A2:D"
+      }
+    },
+    {
+      "id": "format-post",
+      "name": "Format Post with AI",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Format the following post for LinkedIn, Facebook and Twitter, adjusting text length and hashtags: {{ $json.post }}",
+        "temperature": 0.7
+      }
+    },
+    {
+      "id": "post-linkedin",
+      "name": "Post to LinkedIn",
+      "type": "n8n-nodes-base.linkedin",
+      "typeVersion": 1,
+      "position": [
+        300,
+        350
+      ],
+      "parameters": {
+        "operation": "post",
+        "text": "={{ $json.formatted.linkedin }}"
+      }
+    },
+    {
+      "id": "post-twitter",
+      "name": "Post to Twitter",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 1,
+      "position": [
+        300,
+        400
+      ],
+      "parameters": {
+        "operation": "tweet",
+        "text": "={{ $json.formatted.twitter }}"
+      }
+    },
+    {
+      "id": "post-facebook",
+      "name": "Post to Facebook",
+      "type": "n8n-nodes-base.facebook",
+      "typeVersion": 1,
+      "position": [
+        300,
+        450
+      ],
+      "parameters": {
+        "operation": "post",
+        "message": "={{ $json.formatted.facebook }}"
+      }
+    },
+    {
+      "id": "sentiment-analysis",
+      "name": "Analyze Comments with AI",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        600,
+        400
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Classify the sentiment of the following comments as positive, neutral, or negative: {{ $json.comments }}",
+        "temperature": 0
+      }
+    },
+    {
+      "id": "error-handler-900-400",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        900,
+        400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#marketing-alerts",
+        "text": "={{ $json[\"error_message\"] || 'Workflow error' }}"
+      }
+    }
+  ],
+  "connections": {
+    "On Schedule": {
+      "main": [
+        [
+          {
+            "node": "Get Scheduled Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Scheduled Posts": {
+      "main": [
+        [
+          {
+            "node": "Format Post with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Post with AI": {
+      "main": [
+        [
+          {
+            "node": "Post to LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post to Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post to Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Analyze Comments with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Twitter": {
+      "main": [
+        [
+          {
+            "node": "Analyze Comments with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Facebook": {
+      "main": [
+        [
+          {
+            "node": "Analyze Comments with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Comments with AI": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

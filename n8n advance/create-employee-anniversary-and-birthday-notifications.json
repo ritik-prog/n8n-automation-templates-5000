@@ -1,0 +1,130 @@
+{
+  "name": "create-employee-anniversary-and-birthday-notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * *"
+      },
+      "id": "ab1",
+      "name": "Daily 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "hr-sheet-id",
+        "range": "Employees!A2:F999"
+      },
+      "id": "ab2",
+      "name": "Load Employees (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[]; const today=new Date(); const md=(d)=>('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); const out=[]; for(const r of rows){ const [name,email,manager,start,birthday,team]=r; if(!name) continue; if(md(new Date(start))===md(today)) out.push({json:{type:'anniversary',name,email,years:today.getFullYear()-new Date(start).getFullYear(),team}}); if(md(new Date(birthday))===md(today)) out.push({json:{type:'birthday',name,email,team}}); } return out;"
+      },
+      "id": "ab3",
+      "name": "Find Today's Events",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#celebrations",
+        "text": "\ud83c\udf89 {{$json.type==='birthday'?'Birthday':'Anniversary'}}: {{$json.name}} {{ $json.years ? '('+$json.years+' yrs)' : '' }}"
+      },
+      "id": "ab4",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "hr@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "={{$json.type==='birthday'?'Happy Birthday!':'Happy Work Anniversary!'}}",
+        "text": "\ud83c\udf89 Have a great day!"
+      },
+      "id": "ab5",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Employees (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Employees (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Find Today's Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Today's Events": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

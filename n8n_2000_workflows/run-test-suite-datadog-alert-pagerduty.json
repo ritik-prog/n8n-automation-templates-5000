@@ -1,0 +1,103 @@
+{
+  "name": "Run test suite from Datadog alert and send to PagerDuty",
+  "nodes": [
+    {
+      "id": "trigger-datadog-alert",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        142000
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "run-test-suite-from-datadog-alert-and-send-to-pagerduty",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-datadog-alert",
+      "name": "Fetch data from Datadog alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        142000
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/datadog-alert",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-pagerduty",
+      "name": "Send to PagerDuty",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        142000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/pagerduty",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-142000",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        142000
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Datadog alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Datadog alert": {
+      "main": [
+        {
+          "node": "Send to PagerDuty",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to PagerDuty": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

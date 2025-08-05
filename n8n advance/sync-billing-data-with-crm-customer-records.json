@@ -1,0 +1,207 @@
+{
+  "name": "sync-billing-data-with-crm-customer-records",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "billing-event"
+      },
+      "id": "bi1",
+      "name": "Billing Webhook (Stripe/Chargebee)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;/* expect events: invoice.paid/failed, subscription.updated */return [{json:{event:b.type||'event', email:(b.customer_email||b.email||'').toLowerCase(), domain:(b.customer_domain||'').toLowerCase(), mrr:Number(b.mrr||0), arr:Number(b.arr||0), status:b.status||'', invoiceId:b.invoice_id||'', subId:b.subscription_id||''}}];"
+      },
+      "id": "bi2",
+      "name": "Normalize Billing Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "resource": "company",
+        "additionalFields": {
+          "domain": "={{$json.domain}}"
+        }
+      },
+      "id": "bi3",
+      "name": "Find Company by Domain",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "resource": "contact",
+        "additionalFields": {
+          "email": "={{$json.email}}"
+        }
+      },
+      "id": "bi4",
+      "name": "Find Contact by Email",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        380
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "company",
+        "operation": "update",
+        "companyId": "={{$prevNode['Find Company by Domain'].json.id || $json.companyId}}",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "mrr",
+                "value": "={{$json.mrr}}"
+              },
+              {
+                "property": "arr",
+                "value": "={{$json.arr}}"
+              },
+              {
+                "property": "billing_status",
+                "value": "={{$json.status}}"
+              },
+              {
+                "property": "last_invoice_id",
+                "value": "={{$json.invoiceId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "bi5",
+      "name": "Update Company Billing",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "note",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hs_note_body",
+                "value": "={{'Billing event: '+$json.event+' invoice '+$json.invoiceId+' status '+$json.status}}"
+              },
+              {
+                "property": "hs_timestamp",
+                "value": "={{$now}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "bi6",
+      "name": "Log Billing Note",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Billing Webhook (Stripe/Chargebee)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Billing Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Billing Payload": {
+      "main": [
+        [
+          {
+            "node": "Find Company by Domain",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Contact by Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Company by Domain": {
+      "main": [
+        [
+          {
+            "node": "Update Company Billing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Company Billing": {
+      "main": [
+        [
+          {
+            "node": "Log Billing Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

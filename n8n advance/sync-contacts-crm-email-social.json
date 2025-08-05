@@ -1,0 +1,213 @@
+{
+  "name": "sync-contacts-crm-email-social",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 2 * * *"
+      },
+      "id": "s1",
+      "name": "Daily Cron 02:00",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "id": "s2",
+      "name": "Fetch HubSpot Contacts",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        330,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst raw = Array.isArray($json) ? $json : [$json];\nreturn raw.map(c => ({ json: {\n  email: c.properties?.email, firstName: c.properties?.firstname, lastName: c.properties?.lastname,\n  unsubscribed: c.properties?.hs_email_optout || false\n}}));\n"
+      },
+      "id": "s3",
+      "name": "Normalize Contacts",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "listId": "your-mailchimp-list-id",
+        "email": "={{$json.email}}",
+        "additionalFields": {
+          "mergeFieldsUi": {
+            "mergeFieldsValues": [
+              {
+                "fieldId": "FNAME",
+                "value": "={{$json.firstName}}"
+              },
+              {
+                "fieldId": "LNAME",
+                "value": "={{$json.lastName}}"
+              }
+            ]
+          },
+          "status": "subscribed"
+        }
+      },
+      "id": "s4",
+      "name": "Upsert \u2192 Mailchimp",
+      "type": "n8n-nodes-base.mailchimp",
+      "typeVersion": 1,
+      "position": [
+        790,
+        220
+      ],
+      "credentials": {
+        "mailchimpApi": {
+          "id": "mailchimp_cred",
+          "name": "Mailchimp API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.linkedin.com/v2/marketing/remarketing/contacts",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.linkedinAccessToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "optionsJson": "={{ { contacts: [ { email: $json.email, firstName: $json.firstName, lastName: $json.lastName } ], audienceId: 'YOUR_LINKEDIN_AUDIENCE_ID' } }}"
+      },
+      "id": "s5",
+      "name": "Sync \u2192 LinkedIn Audience",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        790,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "sync-log-sheet",
+        "range": "SyncLog!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.firstName}}",
+          "={{$json.lastName}}",
+          "Synced"
+        ]
+      },
+      "id": "s6",
+      "name": "Log Sync",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "seconds": 1
+      },
+      "id": "s7",
+      "name": "Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Cron 02:00": {
+      "main": [
+        [
+          {
+            "node": "Fetch HubSpot Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch HubSpot Contacts": {
+      "main": [
+        [
+          {
+            "node": "Normalize Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Contacts": {
+      "main": [
+        [
+          {
+            "node": "Upsert \u2192 Mailchimp",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sync \u2192 LinkedIn Audience",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Sync": {
+      "main": [
+        [
+          {
+            "node": "Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,178 @@
+{
+  "name": "auto-create-test-cases-from-user-requirements",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "requirements-intake"
+      },
+      "id": "1",
+      "name": "Requirements Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "requirements-intake"
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst projectKey = $json.body?.jiraProjectKey || 'PROJ';\nconst requirements = $json.body?.requirements || []; // array of user stories or acceptance criteria\nreturn [{ json: { projectKey, requirements } }];\n"
+      },
+      "id": "2",
+      "name": "Extract Requirement Set",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a QA engineer. Convert requirements into test cases array. Each: {title, steps:[...], expectedResult, priority (P1|P2|P3), tags:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "Requirements: {{$json.requirements}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Test Cases (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        580,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet out; try { out = JSON.parse($json.choices[0].message.content); } catch(e){ out = []; }\nreturn Array.isArray(out) ? out.map(tc => ({ json: tc })) : [];\n"
+      },
+      "id": "4",
+      "name": "Parse Cases to Items",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        820,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "project": "={{$json.projectKey || $prevNode['Extract Requirement Set'].json.projectKey}}",
+        "issueType": "Task",
+        "summary": "TC: {{$json.title}}",
+        "description": "Steps:\\n- {{$json.steps?.join('\\n- ')}}\\n\\nExpected:\\n{{$json.expectedResult}}",
+        "additionalFields": "={{ { labels: ['test-case'].concat($json.tags || []) , priority: { name: ($json.priority==='P1'?'Highest':$json.priority==='P2'?'High':'Medium') } } }}"
+      },
+      "id": "5",
+      "name": "Create Jira Issues",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        240
+      ],
+      "credentials": {
+        "jiraCloudApi": {
+          "id": "jira_cred",
+          "name": "Jira Cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "qa-testcases-sheet-id",
+        "range": "TestCases!A1",
+        "fields": [
+          "={{$json.title}}",
+          "={{$json.priority}}",
+          "={{$json.steps?.join(' | ')}}",
+          "={{$json.expectedResult}}",
+          "={{($json.tags||[]).join(',')}}"
+        ]
+      },
+      "id": "6",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        380
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Requirements Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Requirement Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Requirement Set": {
+      "main": [
+        [
+          {
+            "node": "Generate Test Cases (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Test Cases (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Cases to Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Cases to Items": {
+      "main": [
+        [
+          {
+            "node": "Create Jira Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

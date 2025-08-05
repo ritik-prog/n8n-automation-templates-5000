@@ -1,0 +1,234 @@
+{
+  "name": "create-dynamic-email-signatures-with-campaign-links",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 1 * * 1"
+      },
+      "id": "es1",
+      "name": "Weekly Mon 01:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "email-signature-sheet-id",
+        "range": "Employees!A2:D999"
+      },
+      "id": "es2",
+      "name": "Load Employees (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "email-signature-sheet-id",
+        "range": "Campaign!A2:E2"
+      },
+      "id": "es3",
+      "name": "Load Campaign (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        380
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const emp=$items().find(i=>i.node.name==='Load Employees (Sheets)')?.json?.rows||[];const c=($items().find(i=>i.node.name==='Load Campaign (Sheets)')?.json?.rows||[])[0]||[];const campaign={name:c[0], baseUrl:c[1]||'https://example.com', source:c[2]||'email', medium:c[3]||'signature', content:c[4]||''};return emp.map(r=>({json:{email:r[0], name:r[1], title:r[2], phone:r[3], campaign}}));"
+      },
+      "id": "es4",
+      "name": "Build Inputs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const u=new URL($json.campaign.baseUrl); u.searchParams.set('utm_source',$json.campaign.source); u.searchParams.set('utm_medium',$json.campaign.medium); u.searchParams.set('utm_campaign',$json.campaign.name); u.searchParams.set('utm_content',($json.name||'').toLowerCase().replace(/\\s+/g,'-')); const link=u.toString(); const html=`<div><strong>${$json.name}</strong> | ${$json.title}<br/>${$json.phone}<br/><a href=\"${link}\">Latest: ${$json.campaign.name}</a></div>`; return [{json:{...$json, link, html}}];"
+      },
+      "id": "es5",
+      "name": "Generate HTML Signature",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://gmail.googleapis.com/gmail/v1/users/{{encodeURIComponent($json.email)}}/settings/sendAs/{{encodeURIComponent($json.email)}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.googleWorkspaceAdminToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "signature": "={{$json.html}}"
+        }
+      },
+      "id": "es6",
+      "name": "Update Gmail SendAs Signature",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "email-signature-sheet-id",
+        "range": "Log!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.link}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "es7",
+      "name": "Log Update (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#it-ops",
+        "text": "Updated signature for {{$json.email}} with campaign {{$json.campaign.name}}"
+      },
+      "id": "es8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 01:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Employees (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Campaign (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Employees (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Build Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Campaign (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Build Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Inputs": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate HTML Signature": {
+      "main": [
+        [
+          {
+            "node": "Update Gmail SendAs Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Gmail SendAs Signature": {
+      "main": [
+        [
+          {
+            "node": "Log Update (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,463 @@
+{
+  "id": "DRjTkkZrfqMbhifO",
+  "meta": {
+    "instanceId": "885b4fb4a6a9c2cb5621429a7b972df0d05bb724c20ac7dac7171b62f1c7ef40",
+    "templateCredsSetupCompleted": true
+  },
+  "name": "Summarize Glassdoor Company Info with Google Gemini and Bright Data Web Scraper",
+  "tags": [
+    {
+      "id": "ddPkw7Hg5dZhQu2w",
+      "name": "AI",
+      "createdAt": "2025-04-13T05:38:08.053Z",
+      "updatedAt": "2025-04-13T05:38:08.053Z"
+    },
+    {
+      "id": "rKOa98eAi3IETrLu",
+      "name": "HR",
+      "createdAt": "2025-04-13T04:59:30.580Z",
+      "updatedAt": "2025-04-13T04:59:30.580Z"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "b2f9fc15-9ccb-48be-ba3c-3a6033c39246",
+      "name": "When clicking ‘Test workflow’",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {},
+      "typeVersion": 1
+    },
+    {
+      "id": "72ab6042-72f1-486e-9095-d17de2f441f4",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "notes": "Gemini Experimental Model",
+      "position": [
+        1320,
+        -180
+      ],
+      "parameters": {
+        "options": {},
+        "modelName": "models/gemini-2.0-flash-thinking-exp-01-21"
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YeO7dHZnuGBVQKVZ",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "notesInFlow": true,
+      "typeVersion": 1
+    },
+    {
+      "id": "58ac3287-2b92-4f09-85a3-9d5393dd9d2a",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "position": [
+        1440,
+        -177.5
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "ad734713-959c-4e09-ac19-4df6b102678e",
+      "name": "Recursive Character Text Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "position": [
+        1528,
+        20
+      ],
+      "parameters": {
+        "options": {},
+        "chunkOverlap": 100
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "350d4391-4ac2-469e-87ce-e3b84926f350",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        880,
+        -350
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "6a7e5360-4cb5-4806-892e-5c85037fa71c",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ready"
+            }
+          ]
+        }
+      },
+      "typeVersion": 2.2
+    },
+    {
+      "id": "43449263-a73e-4d49-8c0f-3d36569e1d65",
+      "name": "Set Snapshot Id",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        440,
+        -275
+      ],
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2c3369c6-9206-45d7-9349-f577baeaf189",
+              "name": "snapshot_id",
+              "type": "string",
+              "value": "={{ $json.snapshot_id }}"
+            }
+          ]
+        }
+      },
+      "typeVersion": 3.4
+    },
+    {
+      "id": "040aae51-d79d-408c-9d03-b6b81ed9e752",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -40,
+        -580
+      ],
+      "parameters": {
+        "width": 400,
+        "height": 200,
+        "content": "## Note\n\nDeals with the Glassdoor data extraction by using the Bright Data Web Scrapper API.\n\nThe summarization chain is being used to demonstrate the usage of the N8N AI capabilities."
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "885986ae-e9e6-48fe-816c-e8fd6f549158",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        480,
+        -580
+      ],
+      "parameters": {
+        "width": 420,
+        "height": 200,
+        "content": "## LLM Usages\n\nGoogle Gemini Flash Exp model is being used.\n\nSummarization Chain is being used for summarization of the content"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "165e3335-cc5e-49d1-9eb5-7f196c5669aa",
+      "name": "Check Snapshot Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        660,
+        -280
+      ],
+      "parameters": {
+        "url": "=https://api.brightdata.com/datasets/v3/progress/{{ $json.snapshot_id }}",
+        "options": {},
+        "sendHeaders": true,
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kdbqXuxIR8qIxF7y",
+          "name": "Header Auth account"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "b0125317-c557-4c38-b9b8-97528a75acb1",
+      "name": "Download the Snapshot Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1100,
+        -400
+      ],
+      "parameters": {
+        "url": "=https://api.brightdata.com/datasets/v3/snapshot/{{ $('HTTP Request to Glassdoor').item.json.snapshot_id }}",
+        "options": {
+          "timeout": 10000
+        },
+        "sendQuery": true,
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "format",
+              "value": "json"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kdbqXuxIR8qIxF7y",
+          "name": "Header Auth account"
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "ec6a6d52-0e67-4100-9b7a-966029628d8e",
+      "name": "Wait for 30 seconds",
+      "type": "n8n-nodes-base.wait",
+      "position": [
+        1100,
+        -175
+      ],
+      "webhookId": "8f2ad619-abe4-4e4e-8de7-9046d4cf3082",
+      "parameters": {
+        "amount": 30
+      },
+      "typeVersion": 1.1
+    },
+    {
+      "id": "0d77c2a9-b820-4943-a215-3f3663842b92",
+      "name": "Summarization of Glassdoor Response",
+      "type": "@n8n/n8n-nodes-langchain.chainSummarization",
+      "position": [
+        1336,
+        -400
+      ],
+      "parameters": {
+        "options": {},
+        "operationMode": "documentLoader"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "f3753c8f-bd1d-454a-b77e-b2237030219d",
+      "name": "Configure Webhook Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1720,
+        -400
+      ],
+      "parameters": {
+        "url": "https://webhook.site/ce41e056-c097-48c8-a096-9b876d3abbf7",
+        "options": {},
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "summary",
+              "value": "={{ $json.response.text }}"
+            }
+          ]
+        }
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "d5cfc596-c2b8-486f-b410-8d537fca1cf6",
+      "name": "HTTP Request to Glassdoor",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "url": "https://api.brightdata.com/datasets/v3/trigger",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "[\n  {\n    \"url\": \"https://www.glassdoor.co.uk/Overview/Working-at-Apple-EI_IE1138.11,16.htm\"\n  }\n]",
+        "sendBody": true,
+        "sendQuery": true,
+        "sendHeaders": true,
+        "specifyBody": "json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "dataset_id",
+              "value": "gd_l7j0bx501ockwldaqf"
+            },
+            {
+              "name": "include_errors",
+              "value": "true"
+            }
+          ]
+        },
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kdbqXuxIR8qIxF7y",
+          "name": "Header Auth account"
+        }
+      },
+      "typeVersion": 4.2
+    }
+  ],
+  "active": false,
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "50a2d845-ec43-4b97-8425-36105a8a8178",
+  "connections": {
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Download the Snapshot Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait for 30 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Snapshot Id": {
+      "main": [
+        [
+          {
+            "node": "Check Snapshot Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Summarization of Glassdoor Response",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for 30 seconds": {
+      "main": [
+        [
+          {
+            "node": "Check Snapshot Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Snapshot Status": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Summarization of Glassdoor Response",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request to Glassdoor": {
+      "main": [
+        [
+          {
+            "node": "Set Snapshot Id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download the Snapshot Response": {
+      "main": [
+        [
+          {
+            "node": "Summarization of Glassdoor Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request to Glassdoor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarization of Glassdoor Response": {
+      "main": [
+        [
+          {
+            "node": "Configure Webhook Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "name": "Schedule time from Calendar event and send to Todoist",
+  "nodes": [
+    {
+      "id": "trigger-calendar-event",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        184400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "schedule-time-from-calendar-event-and-send-to-todoist",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-calendar-event",
+      "name": "Fetch data from Calendar event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        184400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/calendar-event",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-todoist",
+      "name": "Send to Todoist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        184400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/todoist",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-184400",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        184400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Calendar event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Calendar event": {
+      "main": [
+        {
+          "node": "Send to Todoist",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Todoist": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

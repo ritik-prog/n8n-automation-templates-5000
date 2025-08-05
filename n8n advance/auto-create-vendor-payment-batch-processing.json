@@ -1,0 +1,156 @@
+{
+  "name": "auto-create-vendor-payment-batch-processing",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 9 * * 5"
+      },
+      "id": "vb1",
+      "name": "Fridays 09:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/bills?status=approved&due_within=7d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "vb2",
+      "name": "Fetch Approved Bills",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst bills=$json.bills||[];\nconst byVendor = new Map();\nfor(const b of bills){\n  const key=(b.vendor && (b.vendor.id||b.vendor.name)) || 'unknown';\n  const arr = byVendor.get(key) || [];\n  arr.push({id:b.id, amount:+b.balance||0, due:b.dueDate, memo:b.memo||''});\n  byVendor.set(key, arr);\n}\nreturn Array.from(byVendor.entries()).map(([vendor,lines])=>({json:{vendor,lines,total:+lines.reduce((s,x)=>s+x.amount,0).toFixed(2)}}));\n"
+      },
+      "id": "vb3",
+      "name": "Group Bills by Vendor",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.bank.example.com/v1/ach/batch",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.bankToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "batch_id": "={{'bp-'+$now}}",
+          "vendor": "={{$json.vendor}}",
+          "total": "={{$json.total}}",
+          "lines": "={{$json.lines}}"
+        }
+      },
+      "id": "vb4",
+      "name": "Create ACH Batch (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "Batches!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.vendor}}",
+          "={{$json.total}}"
+        ]
+      },
+      "id": "vb5",
+      "name": "Log Batch",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Fridays 09:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Approved Bills",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Approved Bills": {
+      "main": [
+        [
+          {
+            "node": "Group Bills by Vendor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group Bills by Vendor": {
+      "main": [
+        [
+          {
+            "node": "Create ACH Batch (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

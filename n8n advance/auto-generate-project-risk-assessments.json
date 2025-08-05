@@ -1,0 +1,229 @@
+{
+  "name": "auto-generate-project-risk-assessments",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 8 * * 1"
+      },
+      "id": "rk1",
+      "name": "Weekly Mon 08:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://pm.example.com/api/issues?range=30d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pmToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "rk2",
+      "name": "Fetch Issues (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://pm.example.com/api/velocity?range=8w",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pmToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "rk3",
+      "name": "Fetch Velocity (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.1,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a project risk analyst. Create a risk register with fields {risk,category,probability(1-5),impact(1-5),mitigation,owner}. Return JSON {risks:[...]}. Be specific and actionable."
+          },
+          {
+            "role": "user",
+            "content": "Issues: {{$items(0).item.json}}\\nVelocity: {{$items(1).item.json}}"
+          }
+        ]
+      },
+      "id": "rk4",
+      "name": "AI Risk Synthesis",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o={risks:[]}; try{o=JSON.parse($json.choices[0].message.content)}catch(e){} return (o.risks||[]).map(r=>({json:r}));"
+      },
+      "id": "rk5",
+      "name": "Parse Risks",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "pm-ops-sheet-id",
+        "range": "Risks!A1",
+        "fields": [
+          "={{$json.risk}}",
+          "={{$json.category}}",
+          "={{$json.probability}}",
+          "={{$json.impact}}",
+          "={{$json.mitigation}}",
+          "={{$json.owner}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "rk6",
+      "name": "Save Risks (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "page",
+        "space": "PMO",
+        "title": "={{'Risk Register '+$now}}",
+        "text": "={{JSON.stringify($items().map(i=>i.json))}}"
+      },
+      "id": "rk7",
+      "name": "Confluence Page",
+      "type": "n8n-nodes-base.confluence",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "confluenceApi": {
+          "id": "confluence_cred",
+          "name": "Confluence"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Mon 08:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Issues (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Velocity (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Issues (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "AI Risk Synthesis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Velocity (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "AI Risk Synthesis",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI Risk Synthesis": {
+      "main": [
+        [
+          {
+            "node": "Parse Risks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Risks": {
+      "main": [
+        [
+          {
+            "node": "Save Risks (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Confluence Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

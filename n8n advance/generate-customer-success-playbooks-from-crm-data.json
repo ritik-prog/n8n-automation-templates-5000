@@ -1,0 +1,315 @@
+{
+  "name": "generate-customer-success-playbooks-from-crm-data",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 9 * * 1"
+      },
+      "id": "p1",
+      "name": "Weekly Mon 09:00",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "health_tier_ai",
+                "operation": "IN",
+                "value": "Neutral,At Risk"
+              },
+              {
+                "key": "renewal_date",
+                "operation": "IS_NOT_EMPTY"
+              }
+            ]
+          }
+        }
+      },
+      "id": "p2",
+      "name": "Fetch Target Accounts (HubSpot Companies)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst cos = Array.isArray($json)?$json:[$json];\nreturn cos.map(c => ({ json: {\n  companyId: c.id, name: c.properties?.name, arr: Number(c.properties?.annualrevenue||0),\n  healthTier: c.properties?.health_tier_ai||'Neutral', healthScore: Number(c.properties?.health_score_ai||0),\n  renewalDate: c.properties?.renewal_date||'', segments: (c.properties?.segment_tags||'').split(',').map(s=>s.trim()).filter(Boolean),\n}}));\n"
+      },
+      "id": "p3",
+      "name": "Normalize Accounts",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create a Customer Success playbook based on account context. Return JSON {goal, timelineDays, steps:[{dayOffset, owner:'CSM|SE|Support', action, templateEmail?}], risks:[...], kpis:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "Account: {{$json}}"
+          }
+        ]
+      },
+      "id": "p4",
+      "name": "Generate Playbook (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={goal:'Stabilize account',timelineDays:30,steps:[],risks:[],kpis:[]}};return [{json:o}];"
+      },
+      "id": "p5",
+      "name": "Parse Playbook JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "notion-cs-playbooks-db",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "={{$prevNode['Normalize Accounts'].json.name}} Playbook ({{$now}})"
+                }
+              }
+            ]
+          },
+          "Goal": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.goal}}"
+                }
+              }
+            ]
+          },
+          "KPIs": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{($json.kpis||[]).join(', ')}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "p6",
+      "name": "Create Notion Page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        260
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_credential",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const steps=Array.isArray($json.steps)?$json.steps:[];return steps.map(s=>({json:s}));"
+      },
+      "id": "p7",
+      "name": "Fan-out Steps",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "task",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "hs_task_subject",
+                "value": "={{$json.owner+': '+$json.action}}"
+              },
+              {
+                "property": "hs_task_priority",
+                "value": "HIGH"
+              },
+              {
+                "property": "hs_task_status",
+                "value": "WAITING"
+              },
+              {
+                "property": "hs_timestamp",
+                "value": "={{$now}}"
+              },
+              {
+                "property": "hs_task_body",
+                "value": "={{$json.templateEmail || ''}}"
+              },
+              {
+                "property": "associatedcompanyid",
+                "value": "={{$prevNode['Normalize Accounts'].json.companyId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "p8",
+      "name": "Create Tasks in HubSpot",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        360
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#csm",
+        "text": "Playbook generated for {{$prevNode['Normalize Accounts'].json.name}} \u2014 Goal: {{$prevNode['Parse Playbook JSON'].json.goal}}"
+      },
+      "id": "p9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 09:00": {
+      "main": [
+        [
+          {
+            "node": "Fetch Target Accounts (HubSpot Companies)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Target Accounts (HubSpot Companies)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Accounts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Accounts": {
+      "main": [
+        [
+          {
+            "node": "Generate Playbook (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Playbook (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Playbook JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Playbook JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fan-out Steps",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan-out Steps": {
+      "main": [
+        [
+          {
+            "node": "Create Tasks in HubSpot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

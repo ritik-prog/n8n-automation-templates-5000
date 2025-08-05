@@ -1,0 +1,189 @@
+{
+  "name": "auto-create-landing-pages-from-campaign-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lp-create"
+      },
+      "id": "lp1",
+      "name": "Campaign Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;return [{json:{campaign:b.campaign||('cmp-'+Date.now()),product:b.product||'',audience:b.audience||'',offer:b.offer||'',kws:b.keywords||''}}];"
+      },
+      "id": "lp2",
+      "name": "Normalize Brief",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create landing page copy & HTML. Return JSON {title, hero, bullets:[...], cta, seoDescription, html}."
+          },
+          {
+            "role": "user",
+            "content": "Campaign {{$json.campaign}} | Product {{$json.product}} | Audience {{$json.audience}} | Offer {{$json.offer}} | Keywords {{$json.kws}}"
+          }
+        ]
+      },
+      "id": "lp3",
+      "name": "Generate Page (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={title:'Landing',html:'<h1>Landing</h1>'}};return [{json:o}];"
+      },
+      "id": "lp4",
+      "name": "Parse Page JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.webflow.com/collections/{{$credentials.webflowCollectionId}}/items",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.webflowToken}}"
+              },
+              {
+                "name": "accept-version",
+                "value": "1.0.0"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "fields": {
+            "name": "={{$json.title}}",
+            "slug": "={{$json.title.toLowerCase().replace(/[^a-z0-9]+/g,'-')}}",
+            "_draft": false,
+            "_archived": false,
+            "rich_content": "={{$json.html}}"
+          }
+        }
+      },
+      "id": "lp5",
+      "name": "Create Webflow Item",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#campaigns",
+        "text": "Landing page created for {{$prevNode['Parse Page JSON'].json.title}}"
+      },
+      "id": "lp6",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Campaign Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Brief": {
+      "main": [
+        [
+          {
+            "node": "Generate Page (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Page (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Page JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Page JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Webflow Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Webflow Item": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

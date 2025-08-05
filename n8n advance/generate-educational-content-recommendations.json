@@ -1,0 +1,212 @@
+{
+  "name": "generate-educational-content-recommendations",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * 1"
+      },
+      "id": "er1",
+      "name": "Weekly Mon 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://lms.example.com/api/knowledge_graph",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.lmsToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "er2",
+      "name": "Fetch Knowledge Graph (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Recommend 5 pieces of content per learner based on weak topics, mixing videos, readings, and quizzes. JSON output: {recommendations:[{email,items:[{title,type,url,reason}]}]}."
+          },
+          {
+            "role": "user",
+            "content": "Graph & gaps: {{$json}}"
+          }
+        ]
+      },
+      "id": "er3",
+      "name": "AI Recommender",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o={recommendations:[]}; try{o=JSON.parse($json.choices[0].message.content)}catch(e){} return (o.recommendations||[]).map(r=>({json:r}));"
+      },
+      "id": "er4",
+      "name": "Parse JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return ($json.items||[]).map(i=>({json:{email:$json.email, ...i}}));"
+      },
+      "id": "er5",
+      "name": "Split Items",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "coach@school.edu",
+        "toEmail": "={{$json.email}}",
+        "subject": "New learning picks for you",
+        "text": "{{$json.title}} \u2014 {{$json.reason}} \\n{{$json.url}}"
+      },
+      "id": "er6",
+      "name": "Email Rec",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "edu-health-ops-sheet-id",
+        "range": "Recommendations!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.email}}",
+          "={{$json.title}}",
+          "={{$json.type}}",
+          "={{$json.url}}"
+        ]
+      },
+      "id": "er7",
+      "name": "Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Mon 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Knowledge Graph (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Knowledge Graph (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "AI Recommender",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Recommender": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON": {
+      "main": [
+        [
+          {
+            "node": "Split Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Items": {
+      "main": [
+        [
+          {
+            "node": "Email Rec",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

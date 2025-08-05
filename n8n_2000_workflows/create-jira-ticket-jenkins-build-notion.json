@@ -1,0 +1,103 @@
+{
+  "name": "Create jira ticket from Jenkins build and send to Notion",
+  "nodes": [
+    {
+      "id": "trigger-jenkins-build",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        146100
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-jira-ticket-from-jenkins-build-and-send-to-notion",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-jenkins-build",
+      "name": "Fetch data from Jenkins build",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        146100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/jenkins-build",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-notion",
+      "name": "Send to Notion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        146100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/notion",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-146100",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        146100
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Jenkins build",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Jenkins build": {
+      "main": [
+        {
+          "node": "Send to Notion",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Notion": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

@@ -1,0 +1,266 @@
+{
+  "name": "automated-code-reviews-using-ai",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "pull_request"
+        ],
+        "owner": "your-org",
+        "repo": "your-repo"
+      },
+      "id": "1",
+      "name": "GitHub PR Trigger",
+      "type": "n8n-nodes-base.githubTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "github_credential",
+          "name": "GitHub OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{`https://api.github.com/repos/${$json.body.repository.owner.login}/${$json.body.repository.name}/pulls/${$json.body.pull_request.number}/files`}}",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Accept",
+                "value": "application/vnd.github+json"
+              }
+            ]
+          }
+        },
+        "authentication": "predefinedCredentialType"
+      },
+      "id": "2",
+      "name": "Fetch PR Files (GitHub API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github_api_token",
+          "name": "GitHub Personal Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Build compact diff summary string to review\nconst files = Array.isArray($json) ? $json : $json.body || [];\nconst summary = files.map(f => `FILE:${f.filename}\\nSTATUS:${f.status}\\nPATCH:\\n${f.patch || ''}`).join('\\n\\n---\\n\\n');\nreturn [{ json: { reviewInput: summary, prNumber: $json.body?.pull_request?.number || $json.prNumber || 0 } }];\n"
+      },
+      "id": "3",
+      "name": "Prepare Diff Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        580,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.1,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a senior code reviewer. Review the patch for bugs, security, performance, readability, tests. Return JSON {summary, riskLevel (Low|Medium|High), actionableComments: [{file, lineHint, issue, suggestion}], checklist: [..]}."
+          },
+          {
+            "role": "user",
+            "content": "Patch to review:\\n{{$json.reviewInput}}"
+          }
+        ]
+      },
+      "id": "4",
+      "name": "AI Code Review (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        820,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet out; try { out = JSON.parse($json.choices[0].message.content); } catch(e){ out = { summary: $json.choices?.[0]?.message?.content || 'Review failed', riskLevel:'Medium', actionableComments:[], checklist:[] }; }\nconst body = `**Automated AI Review**\\n\\n**Risk:** ${out.riskLevel}\\n\\n**Summary:**\\n${out.summary}\\n\\n**Comments:**\\n${(out.actionableComments||[]).map(c=>`- ${c.file} ${c.lineHint||''}: ${c.issue} \u2192 _${c.suggestion}_`).join('\\n')}\\n\\n**Checklist:**\\n${(out.checklist||[]).map(i=>`- [ ] ${i}`).join('\\n')}`;\nreturn [{ json: { body, riskLevel: out.riskLevel } }];\n"
+      },
+      "id": "5",
+      "name": "Format PR Comment",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{`https://api.github.com/repos/${$json.body.repository.owner.login}/${$json.body.repository.name}/issues/${$json.body.pull_request.number}/comments`}}",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Accept",
+                "value": "application/vnd.github+json"
+              }
+            ]
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "jsonParameters": true,
+        "optionsJson": "={{ { body: $json.body } }}"
+      },
+      "id": "6",
+      "name": "Post PR Comment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        260
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github_api_token",
+          "name": "GitHub Personal Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{`https://api.github.com/repos/${$json.body.repository.owner.login}/${$json.body.repository.name}/issues/${$json.body.pull_request.number}/labels`}}",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Accept",
+                "value": "application/vnd.github+json"
+              }
+            ]
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "jsonParameters": true,
+        "optionsJson": "={{ { labels: [`AI-Review:${$json.riskLevel}`] } }}"
+      },
+      "id": "7",
+      "name": "Label PR by Risk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        360
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "github_api_token",
+          "name": "GitHub Personal Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#code-reviews",
+        "text": "\ud83e\udd16 AI review posted for PR #{{$json.body?.pull_request?.number}} with risk {{$json.riskLevel}}"
+      },
+      "id": "8",
+      "name": "Notify Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        300
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "slack_credential",
+          "name": "Slack Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "GitHub PR Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch PR Files (GitHub API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PR Files (GitHub API)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Diff Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Diff Summary": {
+      "main": [
+        [
+          {
+            "node": "AI Code Review (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Code Review (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Format PR Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format PR Comment": {
+      "main": [
+        [
+          {
+            "node": "Post PR Comment",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Label PR by Risk",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

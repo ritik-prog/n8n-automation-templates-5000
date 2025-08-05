@@ -1,0 +1,103 @@
+{
+  "name": "Store in sheet from External API and send to Slack",
+  "nodes": [
+    {
+      "id": "trigger-external-api",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        198300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "store-in-sheet-from-external-api-and-send-to-slack",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-external-api",
+      "name": "Fetch data from External API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        198300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/external-api",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        198300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/slack",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-198300",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        198300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from External API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from External API": {
+      "main": [
+        {
+          "node": "Send to Slack",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Slack": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

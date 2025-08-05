@@ -1,0 +1,228 @@
+{
+  "name": "create-dynamic-pricing-campaigns-based-on-inventory",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 2 * * *"
+      },
+      "id": "dp1",
+      "name": "Daily 02:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "inventory-sheet-id",
+        "range": "Inventory!A2:H999"
+      },
+      "id": "dp2",
+      "name": "Load Inventory (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "inventory-sheet-id",
+        "range": "Demand!A2:C999"
+      },
+      "id": "dp3",
+      "name": "Load Demand (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const inv=$items().find(i=>i.node.name==='Load Inventory (Sheets)')?.json?.rows||[];const dem=$items().find(i=>i.node.name==='Load Demand (Sheets)')?.json?.rows||[];const dmap=new Map(dem.map(r=>[r[0],{velocity:Number(r[1]||0),priceIndex:Number(r[2]||1)}]));const out=[];for(const r of inv){const [sku,name,basePrice,stock,minMargin,ceiling,category,shopifyId]=r;const d=dmap.get(sku)||{velocity:0,priceIndex:1};const bp=Number(basePrice||0);const s=Number(stock||0);const ceil=Number(ceiling||bp*1.5);const margin=Number(minMargin||0.2);let factor=1; if(s<10) factor+=0.15; if(s>200) factor-=0.10; if(d.velocity>50) factor+=0.20; if(d.velocity<5) factor-=0.10; factor*=d.priceIndex||1; let newPrice=Math.max(bp*(1+margin), Math.min(ceil, Math.round(bp*factor*100)/100)); const change=((newPrice-bp)/bp)*100; const action= change>0.5? 'increase' : (change<-0.5? 'decrease':'hold'); out.push({json:{sku,name,basePrice:bp,stock:s,newPrice:+newPrice.toFixed(2),change:+change.toFixed(2),action,category,shopifyId}});}return out;"
+      },
+      "id": "dp4",
+      "name": "Compute Dynamic Price (Rules)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return $items().filter(i=>i.json.action!=='hold');"
+      },
+      "id": "dp5",
+      "name": "Filter Meaningful Changes",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "updateProduct",
+        "productId": "={{$json.shopifyId}}",
+        "additionalFields": {
+          "variantsUi": {
+            "variantValues": [
+              {
+                "price": "={{$json.newPrice}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "dp6",
+      "name": "Update Shopify Price",
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ],
+      "credentials": {
+        "shopifyApi": {
+          "id": "shopify_cred",
+          "name": "Shopify API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "inventory-sheet-id",
+        "range": "PriceChanges!A1",
+        "fields": [
+          "={{$json.sku}}",
+          "={{$json.basePrice}}",
+          "={{$json.newPrice}}",
+          "={{$json.change}}",
+          "={{$json.stock}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "dp7",
+      "name": "Log Changes (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        340
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#ecommerce",
+        "text": "Pricing {{$json.action}} for {{$json.sku}} \u279c {{$json.newPrice}} ({{ $json.change }}%)."
+      },
+      "id": "dp9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 02:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Inventory (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Demand (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Inventory (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Compute Dynamic Price (Rules)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Demand (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Compute Dynamic Price (Rules)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Dynamic Price (Rules)": {
+      "main": [
+        [
+          {
+            "node": "Filter Meaningful Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Meaningful Changes": {
+      "main": [
+        [
+          {
+            "node": "Update Shopify Price",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Changes (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

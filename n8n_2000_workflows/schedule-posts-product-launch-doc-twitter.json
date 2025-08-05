@@ -1,0 +1,103 @@
+{
+  "name": "Schedule posts from Product launch doc and send to Twitter",
+  "nodes": [
+    {
+      "id": "trigger-product-launch-doc",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        66200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "schedule-posts-from-product-launch-doc-and-send-to-twitter",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-product-launch-doc",
+      "name": "Fetch data from Product launch doc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        66200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/product-launch-doc",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-twitter",
+      "name": "Send to Twitter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        66200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/twitter",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-66200",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        66200
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Product launch doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Product launch doc": {
+      "main": [
+        {
+          "node": "Send to Twitter",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Twitter": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

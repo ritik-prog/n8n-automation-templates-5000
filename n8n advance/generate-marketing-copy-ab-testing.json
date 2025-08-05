@@ -1,0 +1,149 @@
+{
+  "name": "generate-marketing-copy-ab-testing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "marketing-copy-input"
+      },
+      "id": "1",
+      "name": "Marketing Copy Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "ab-copy-trigger"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { baseCopy: $json.body.baseCopy, audience: $json.body.audience, product: $json.body.product } }];"
+      },
+      "id": "2",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.7,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a marketing copywriter. Create 3 variations of this product marketing message for A/B testing. Tailor tone and structure slightly for effectiveness. Return JSON: [{version, headline, subheadline, callToAction}]."
+          },
+          {
+            "role": "user",
+            "content": "Audience: {{$json.audience}}\nProduct: {{$json.product}}\nOriginal Copy: {{$json.baseCopy}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Variants (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const variants = JSON.parse($json.choices[0].message.content); return variants.map(v => ({ json: v }));"
+      },
+      "id": "4",
+      "name": "Parse Variants",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "ab-copy-test-sheet-id",
+        "range": "CopyVariants!A1",
+        "fields": [
+          "={{$json.version}}",
+          "={{$json.headline}}",
+          "={{$json.subheadline}}",
+          "={{$json.callToAction}}"
+        ]
+      },
+      "id": "5",
+      "name": "Save to A/B Testing Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Marketing Copy Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Input": {
+      "main": [
+        [
+          {
+            "node": "Generate Variants (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Variants (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Variants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Variants": {
+      "main": [
+        [
+          {
+            "node": "Save to A/B Testing Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

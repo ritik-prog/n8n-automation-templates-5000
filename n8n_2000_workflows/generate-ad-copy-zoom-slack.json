@@ -1,0 +1,129 @@
+{
+  "name": "Generate ad copy from Zoom and send to Slack",
+  "nodes": [
+    {
+      "id": "trigger-zoom",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        7300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-ad-copy-from-zoom-and-send-to-slack",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-zoom",
+      "name": "Fetch data from Zoom",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        7300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/zoom",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-generate-ad-copy",
+      "name": "AI: Generate Ad Copy",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        7300
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: generate ad copy"
+      }
+    },
+    {
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        7300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/slack",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-7300",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        7300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Zoom",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Zoom": {
+      "main": [
+        {
+          "node": "AI: Generate Ad Copy",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Generate Ad Copy": {
+      "main": [
+        [
+          {
+            "node": "AI: Generate Ad Copy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Slack": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

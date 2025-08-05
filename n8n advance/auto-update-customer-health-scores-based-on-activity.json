@@ -1,0 +1,320 @@
+{
+  "name": "auto-update-customer-health-scores-based-on-activity",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 4 * * *"
+      },
+      "id": "h1",
+      "name": "Daily 04:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "lifecyclestage",
+                "operation": "EQUAL",
+                "value": "customer"
+              }
+            ]
+          }
+        }
+      },
+      "id": "h2",
+      "name": "Fetch Customers (HubSpot Companies)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst companies = Array.isArray($json)?$json:[$json];\nreturn companies.map(c => ({ json: {\n  companyId: c.id,\n  name: c.properties?.name,\n  domain: c.properties?.domain,\n  ownerId: c.properties?.hubspot_owner_id,\n  plan: c.properties?.subscription_plan || '',\n  seatsPurchased: Number(c.properties?.seats_purchased || 0),\n}}));\n"
+      },
+      "id": "h3",
+      "name": "Normalize Companies",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://dw.yourcompany.com/api/v1/usage?domain={{$json.domain}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.dwApiKey}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "h4",
+      "name": "Fetch Product Usage (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://support.yourcompany.com/api/v2/health?domain={{$json.domain}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.supportApiKey}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "h5",
+      "name": "Fetch Support Stats (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst usage = $items().find(i=>i.node.name==='Fetch Product Usage (HTTP)')?.json || {};\nconst support = $items().find(i=>i.node.name==='Fetch Support Stats (HTTP)')?.json || {};\nconst company = $prevNode['Normalize Companies'].json;\n\nconst kpis = {\n  logins30d: Number(usage.logins30d||0),\n  dau: Number(usage.dau||0),\n  mau: Number(usage.mau||0),\n  featureCore: Number(usage.feature_adoption?.core||0),\n  featurePremium: Number(usage.feature_adoption?.premium||0),\n  licenseUtil: Number(usage.license_utilization||0),\n  ttffDays: Number(usage.ttff_days||0),\n  ticketsOpen: Number(support.tickets_open||0),\n  tickets30d: Number(support.tickets_30d||0),\n  csat: Number(support.csat||0),\n  nps: Number(support.nps||0),\n  plan: company.plan,\n  seatsPurchased: company.seatsPurchased\n};\n\nlet score = 0;\nscore += Math.min(kpis.mau/ (kpis.seatsPurchased||1) * 20, 20);\nscore += Math.min(kpis.featureCore * 0.15, 15);\nscore += Math.min(kpis.featurePremium * 0.10, 10);\nscore += Math.max(0, 10 - Math.max(0, kpis.tickets30d - 2));\nscore += Math.max(0, (kpis.csat/100) * 10);\nscore += Math.max(0, ((kpis.nps+100)/200) * 10);\nscore += Math.max(0, 10 - Math.min(10, kpis.ttffDays));\nscore += Math.max(0, Math.min(15, (kpis.licenseUtil/100)*15));\n\nreturn [{ json: { company, kpis, baseScore: Math.round(score) } }];\n"
+      },
+      "id": "h6",
+      "name": "Compute Base Score",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Act as a CSM data analyst. Given KPIs and a baseScore (0-100), return JSON {adjustment:-10..+10, tier:'Good|Neutral|At Risk', reason, alerts:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "KPIs: {{$json.kpis}} BaseScore: {{$json.baseScore}}"
+          }
+        ]
+      },
+      "id": "h7",
+      "name": "AI Adjustment (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={adjustment:0,tier:'Neutral',reason:'parse',alerts:[]}};const final=Math.max(0,Math.min(100,($prevNode['Compute Base Score'].json.baseScore||0)+o.adjustment));return [{json:{finalScore:final,tier:o.tier,reason:o.reason,alerts:o.alerts}}];"
+      },
+      "id": "h8",
+      "name": "Parse & Finalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "company",
+        "operation": "update",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "health_score_ai",
+                "value": "={{$json.finalScore}}"
+              },
+              {
+                "property": "health_tier_ai",
+                "value": "={{$json.tier}}"
+              },
+              {
+                "property": "health_reason_ai",
+                "value": "={{$json.reason}}"
+              }
+            ]
+          }
+        },
+        "companyId": "={{$prevNode['Normalize Companies'].json.companyId}}"
+      },
+      "id": "h9",
+      "name": "Update Company Health (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#csm-alerts",
+        "text": "{{$prevNode['Normalize Companies'].json.name}} health {{$prevNode['Parse & Finalize'].json.finalScore}} ({{$prevNode['Parse & Finalize'].json.tier}}) \u2014 {{$prevNode['Parse & Finalize'].json.reason}}"
+      },
+      "id": "h10",
+      "name": "Notify Slack (If At Risk)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1860,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 04:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Customers (HubSpot Companies)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Customers (HubSpot Companies)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Companies": {
+      "main": [
+        [
+          {
+            "node": "Fetch Product Usage (HTTP)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Support Stats (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Product Usage (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Compute Base Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Support Stats (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Compute Base Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Base Score": {
+      "main": [
+        [
+          {
+            "node": "AI Adjustment (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Adjustment (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse & Finalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Finalize": {
+      "main": [
+        [
+          {
+            "node": "Update Company Health (HubSpot)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Slack (If At Risk)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

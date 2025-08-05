@@ -1,0 +1,171 @@
+{
+  "name": "auto-sync-payment-data-between-systems",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-webhook"
+      },
+      "id": "py1",
+      "name": "Payment Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b=$json.body||$json;\nconst id = b.id || ('pay-'+Date.now());\nreturn [{json:{id, amount:+b.amount, currency:b.currency||'USD', status:b.status||'succeeded', method:b.method||'card', customer:b.customer||'', email:(b.email||'').toLowerCase(), created:b.created||new Date().toISOString(), signature:b.signature||''}}];\n"
+      },
+      "id": "py2",
+      "name": "Normalize Payment",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.crm.example.com/v2/payments/upsert",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.crmToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "id": "={{$json.id}}",
+          "amount": "={{$json.amount}}",
+          "currency": "={{$json.currency}}",
+          "status": "={{$json.status}}",
+          "email": "={{$json.email}}",
+          "created": "={{$json.created}}"
+        }
+      },
+      "id": "py3",
+      "name": "Upsert in CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/payments",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "external_id": "={{$json.id}}",
+          "amount": "={{$json.amount}}",
+          "currency": "={{$json.currency}}",
+          "status": "={{$json.status}}",
+          "customer": "={{$json.customer}}",
+          "email": "={{$json.email}}",
+          "method": "={{$json.method}}",
+          "created": "={{$json.created}}"
+        }
+      },
+      "id": "py4",
+      "name": "Post to Accounting",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "finance-ops-sheet-id",
+        "range": "Payments!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.id}}",
+          "={{$json.amount}}",
+          "={{$json.currency}}",
+          "={{$json.status}}",
+          "={{$json.email}}"
+        ]
+      },
+      "id": "py5",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Payment Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payment": {
+      "main": [
+        [
+          {
+            "node": "Upsert in CRM",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Accounting",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

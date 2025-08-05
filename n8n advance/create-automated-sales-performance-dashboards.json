@@ -1,0 +1,140 @@
+{
+  "name": "create-automated-sales-performance-dashboards",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 5 * * *"
+      },
+      "id": "sd1",
+      "name": "Daily 05:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "id": "sd2",
+      "name": "Fetch Deals (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const deals=Array.isArray($json)?$json:[$json];const agg={};for(const d of deals){const owner=d.properties?.hubspot_owner_id||'unknown';if(!agg[owner]) agg[owner]={pipe:0,won:0,count:0,avgCycle:0,cycleCount:0};const amt=Number(d.properties?.amount||0);agg[owner].pipe+=amt;const stage=(d.properties?.dealstage||'').toLowerCase();if(stage.includes('closedwon')) agg[owner].won+=amt; if(d.properties?.createdate && d.properties?.closedate){const c=new Date(d.properties.closedate)-new Date(d.properties.createdate); agg[owner].avgCycle += c; agg[owner].cycleCount += 1; } agg[owner].count+=1;} const rows=Object.entries(agg).map(([o,v])=>({json:{owner:o,pipe:+v.pipe.toFixed(2),won:+v.won.toFixed(2),count:v.count,avgCycleDays: v.cycleCount? Math.round(v.avgCycle/v.cycleCount/86400000):0}})); return rows;"
+      },
+      "id": "sd3",
+      "name": "Aggregate by Owner",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "sales-dash-sheet-id",
+        "range": "Daily!A1",
+        "fields": [
+          "={{$json.owner}}",
+          "={{$json.pipe}}",
+          "={{$json.won}}",
+          "={{$json.count}}",
+          "={{$json.avgCycleDays}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "sd4",
+      "name": "Append to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#sales-leadership",
+        "text": "Dashboard updated \u2014 Top performer: {{$items().sort((a,b)=>b.json.won-a.json.won)[0]?.json.owner || 'n/a'}}"
+      },
+      "id": "sd5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 05:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deals (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deals (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate by Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate by Owner": {
+      "main": [
+        [
+          {
+            "node": "Append to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

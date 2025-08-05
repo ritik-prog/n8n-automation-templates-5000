@@ -1,0 +1,103 @@
+{
+  "name": "Parse json from Website URL and send to Data warehouse",
+  "nodes": [
+    {
+      "id": "trigger-website-url",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        199400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "parse-json-from-website-url-and-send-to-data-warehouse",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-website-url",
+      "name": "Fetch data from Website URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        199400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/website-url",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-data-warehouse",
+      "name": "Send to Data warehouse",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        199400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/data-warehouse",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-199400",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        199400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Website URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Website URL": {
+      "main": [
+        {
+          "node": "Send to Data warehouse",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Data warehouse": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

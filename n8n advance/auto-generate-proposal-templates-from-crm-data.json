@@ -1,0 +1,266 @@
+{
+  "name": "auto-generate-proposal-templates-from-crm-data",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "deal.propertyChange"
+        ]
+      },
+      "id": "pg1",
+      "name": "HubSpot Deal Trigger",
+      "type": "n8n-nodes-base.hubspotTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "hubspotDeveloperApi": {
+          "id": "hubspot_trigger_cred",
+          "name": "HubSpot Trigger OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const prop=$json.body?.propertyName;const val=$json.body?.propertyValue||''; if(prop!=='dealstage' || !/contractsent|presentation|proposal/i.test(val)) return []; return [{json:{dealId:$json.body.objectId}}];"
+      },
+      "id": "pg2",
+      "name": "Gate Proposal Stages",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "resource": "deal",
+        "dealId": "={{$json.dealId}}"
+      },
+      "id": "pg3",
+      "name": "Fetch Deal",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        280
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "hs_object_id",
+                "operation": "EQUAL",
+                "value": "={{$prevNode['Fetch Deal'].json.properties?.associatedcompanyid}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "pg4",
+      "name": "Fetch Company",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        380
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Generate a structured proposal. Return JSON {title, overview, scope:[...], pricingTable:[{item,qty,unitPrice}], terms:[...], timeline:[...], docMarkdown}."
+          },
+          {
+            "role": "user",
+            "content": "Deal: {{$prevNode['Fetch Deal'].json}} Company: {{$json}}"
+          }
+        ]
+      },
+      "id": "pg5",
+      "name": "Generate Proposal (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={title:'Proposal',docMarkdown:'# Proposal\\n'}};const b64=Buffer.from(o.docMarkdown||'# Proposal').toString('base64');return [{json:o,binary:{file:{data:b64,fileName:(o.title||'Proposal')+'.md',mimeType:'text/markdown'}}}];"
+      },
+      "id": "pg6",
+      "name": "Build Doc (binary)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "binaryData": "={{$binary.file}}",
+        "options": {
+          "parentId": "proposals-folder-id"
+        }
+      },
+      "id": "pg7",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "sales@yourcompany.com",
+        "toEmail": "={{'owner+'+$prevNode['Fetch Deal'].json.properties?.hubspot_owner_id+'@yourcompany.com'}}",
+        "subject": "={{'Proposal ready: '+$prevNode['Build Doc (binary)'].json.title}}",
+        "text": "Generated proposal uploaded. Link: {{$prevNode['Upload to Google Drive'].json.webViewLink}}"
+      },
+      "id": "pg8",
+      "name": "Email Owner",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        320
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "HubSpot Deal Trigger": {
+      "main": [
+        [
+          {
+            "node": "Gate Proposal Stages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate Proposal Stages": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deal",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Company": {
+      "main": [
+        [
+          {
+            "node": "Generate Proposal (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deal": {
+      "main": [
+        [
+          {
+            "node": "Generate Proposal (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Proposal (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Build Doc (binary)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Doc (binary)": {
+      "main": [
+        [
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Email Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

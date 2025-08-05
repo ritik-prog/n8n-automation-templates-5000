@@ -1,0 +1,305 @@
+{
+  "name": "generate-automated-brand-monitoring-alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 */3 * * *"
+      },
+      "id": "bm1",
+      "name": "Every 3 hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "brand-monitoring-sheet-id",
+        "range": "Keywords!A2:B999"
+      },
+      "id": "bm2",
+      "name": "Load Keywords (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "brand-monitoring-sheet-id",
+        "range": "Seen!A2:A999"
+      },
+      "id": "bm3",
+      "name": "Load Seen Hashes (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        380
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const kws=$items().find(i=>i.node.name==='Load Keywords (Sheets)')?.json?.rows||[];const seenRows=$items().find(i=>i.node.name==='Load Seen Hashes (Sheets)')?.json?.rows||[];const seen=new Set((seenRows||[]).map(r=>r[0]));const out=[];for(const r of kws){const kw=r[0];const source=(r[1]||'newsapi');if(!kw) continue; out.push({json:{kw,source,seen:Array.from(seen)}});}return out;"
+      },
+      "id": "bm4",
+      "name": "Prepare Queries",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://newsapi.org/v2/everything?q={{$json.kw}}&pageSize=10&sortBy=publishedAt",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "X-Api-Key",
+                "value": "{{$credentials.newsApiKey}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "bm5",
+      "name": "Search NewsAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.twitter.com/2/tweets/search/recent?query={{encodeURIComponent($json.kw)}} -is:retweet&max_results=10",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.twitterBearer}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "bm6",
+      "name": "Search X/Twitter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const items=[]; const seen=new Set($json.seen||[]); // NewsAPI\nif($prevNode['Search NewsAPI']?.json?.articles){ for(const a of $prevNode['Search NewsAPI'].json.articles){ const id=(a.url||'')+':' + (a.publishedAt||''); const hash=Buffer.from(require('crypto').createHash('md5').update(id).digest('hex')).toString('hex'); if(seen.has(hash)) continue; items.push({json:{type:'news',hash,source:a.source?.name||'',title:a.title||'',url:a.url||'',desc:a.description||'',published:a.publishedAt||'', author:a.author||''}}); }} // Twitter\nif($prevNode['Search X/Twitter']?.json?.data){ for(const t of $prevNode['Search X/Twitter'].json.data){ const id=(t.id||''); const hash=Buffer.from(require('crypto').createHash('md5').update('tw:'+id).digest('hex')).toString('hex'); if(seen.has(hash)) continue; items.push({json:{type:'tweet',hash,source:'twitter',title:(t.text||'').slice(0,120),url:'https://x.com/i/web/status/'+t.id,desc:t.text||'',published:t.created_at||'', author:t.author_id||''}}); }} return items;"
+      },
+      "id": "bm7",
+      "name": "Normalize & Dedup",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Classify mention severity and category. Return JSON {severity:'low|med|high', category:'PR|Competitor|Product|Review|Other', summary, sentiment:'pos|neg|neu'}."
+          },
+          {
+            "role": "user",
+            "content": "{{$json}}"
+          }
+        ]
+      },
+      "id": "bm8",
+      "name": "AI Triage (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "brand-monitoring-sheet-id",
+        "range": "Seen!A1",
+        "fields": [
+          "={{$prevNode['Normalize & Dedup'].json.hash}}"
+        ]
+      },
+      "id": "bm9",
+      "name": "Append Seen Hash",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#brand-monitoring",
+        "text": "{{$json.category||'Mention'}} ({{$json.severity||'low'}}): {{$prevNode['Normalize & Dedup'].json.title}} \u2014 {{$prevNode['Normalize & Dedup'].json.url}}"
+      },
+      "id": "bm10",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "Every 3 hours": {
+      "main": [
+        [
+          {
+            "node": "Load Keywords (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Seen Hashes (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Keywords (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Seen Hashes (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Queries": {
+      "main": [
+        [
+          {
+            "node": "Search NewsAPI",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search X/Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search NewsAPI": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search X/Twitter": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & Dedup": {
+      "main": [
+        [
+          {
+            "node": "AI Triage (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Triage (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Append Seen Hash",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

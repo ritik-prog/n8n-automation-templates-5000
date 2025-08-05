@@ -1,0 +1,275 @@
+{
+  "name": "create-automated-content-curation-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 8 * * *"
+      },
+      "id": "cc1",
+      "name": "Daily 08:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "content-curation-sheet-id",
+        "range": "Feeds!A2:A999"
+      },
+      "id": "cc2",
+      "name": "Load Feeds (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        280
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "content-curation-sheet-id",
+        "range": "Seen!A2:A999"
+      },
+      "id": "cc3",
+      "name": "Load Seen URLs (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const feeds=($json.rows||[]).map(r=>r[0]).filter(Boolean);return feeds.map(f=>({json:{feed:f}}));"
+      },
+      "id": "cc4",
+      "name": "Fan-out Feeds",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.feed}}"
+      },
+      "id": "cc5",
+      "name": "Read Feed (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const seenRows=$items().find(i=>i.node.name==='Load Seen URLs (Sheets)')?.json?.rows||[];const seen=new Set((seenRows||[]).map(r=>r[0]));const data=$json; const items=[]; const m=[...String(data).matchAll(/<item>[\\s\\S]*?<title>(.*?)<\\/title>[\\s\\S]*?<link>(.*?)<\\/link>[\\s\\S]*?<pubDate>(.*?)<\\/pubDate>[\\s\\S]*?<description>([\\s\\S]*?)<\\/description>[\\s\\S]*?<\\/item>/gi)]; for(const x of m){ const title=x[1]; const url=x[2]; const date=x[3]; const desc=x[4]; if(seen.has(url)) continue; items.push({json:{title,url,date,desc}}); } return items;"
+      },
+      "id": "cc6",
+      "name": "Extract RSS Items",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Summarize the article in 2 sentences and extract 3 tags. Return JSON {summary, tags:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "Title {{$json.title}}\\nDescription {{$json.desc}}"
+          }
+        ]
+      },
+      "id": "cc7",
+      "name": "Summarize & Tag (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "content-curation-sheet-id",
+        "range": "Digest!A1",
+        "fields": [
+          "={{$prevNode['Extract RSS Items'].json.title}}",
+          "={{$prevNode['Extract RSS Items'].json.url}}",
+          "={{$json.summary}}",
+          "={{($json.tags||[]).join(', ')}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "cc8",
+      "name": "Append Digest (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        280
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "content-curation-sheet-id",
+        "range": "Seen!A1",
+        "fields": [
+          "={{$prevNode['Extract RSS Items'].json.url}}"
+        ]
+      },
+      "id": "cc9",
+      "name": "Append Seen URL",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        360
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#curation",
+        "text": "Added to digest: {{$prevNode['Extract RSS Items'].json.title}}"
+      },
+      "id": "cc10",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 08:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Feeds (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Seen URLs (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Feeds (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Fan-out Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan-out Feeds": {
+      "main": [
+        [
+          {
+            "node": "Read Feed (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Feed (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Extract RSS Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract RSS Items": {
+      "main": [
+        [
+          {
+            "node": "Summarize & Tag (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize & Tag (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Append Digest (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Append Seen URL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

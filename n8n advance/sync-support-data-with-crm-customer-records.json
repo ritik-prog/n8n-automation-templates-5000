@@ -1,0 +1,127 @@
+{
+  "name": "sync-support-data-with-crm-customer-records",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 */6 * * *"
+      },
+      "id": "sc1",
+      "name": "Every 6 hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets?updated_since={{encodeURIComponent(new Date(Date.now()-6*3600000).toISOString())}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sc2",
+      "name": "Fetch Recent Tickets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const arr=$json.tickets||$json||[]; const map={}; for(const t of (Array.isArray(arr)?arr:[arr])){ const acct=(t.account||t.domain||'unknown').toLowerCase(); if(!map[acct]) map[acct]={open:0,closed:0,breaches:0,last:new Date(0)}; if(t.status==='open') map[acct].open++; else map[acct].closed++; if(t.escalated) map[acct].breaches++; const lu=new Date(t.updatedAt); if(lu>map[acct].last) map[acct].last=lu; } return Object.entries(map).map(([account,stats])=>({json:{account, ...stats, last: stats.last.toISOString()}}));"
+      },
+      "id": "sc3",
+      "name": "Aggregate by Account",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.crm.com/v1/accounts/upsert",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.crmToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "account": "={{$json.account}}",
+          "supportOpen": "={{$json.open}}",
+          "supportClosed": "={{$json.closed}}",
+          "supportBreaches": "={{$json.breaches}}",
+          "supportLastActivity": "={{$json.last}}"
+        }
+      },
+      "id": "sc4",
+      "name": "Upsert CRM (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Every 6 hours": {
+      "main": [
+        [
+          {
+            "node": "Fetch Recent Tickets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Tickets": {
+      "main": [
+        [
+          {
+            "node": "Aggregate by Account",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate by Account": {
+      "main": [
+        [
+          {
+            "node": "Upsert CRM (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

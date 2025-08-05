@@ -1,0 +1,243 @@
+{
+  "name": "auto-generate-press-release-distributions",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "press-brief"
+      },
+      "id": "pr1",
+      "name": "Press Brief Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;return [{json:{title:b.title||'',announcement:b.announcement||'',quotes:b.quotes||'',company:b.company||'',embargo:b.embargo||''}}];"
+      },
+      "id": "pr2",
+      "name": "Normalize Brief",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.25,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Draft a press release. Return JSON {headline, subhead, bodyMarkdown, emailSubject, emailBody}."
+          },
+          {
+            "role": "user",
+            "content": "Brief {{$json}}"
+          }
+        ]
+      },
+      "id": "pr3",
+      "name": "Draft Release (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let d;try{d=JSON.parse($json.choices[0].message.content)}catch(e){d={headline:'News',bodyMarkdown:'# News'}};const b64=Buffer.from(d.bodyMarkdown||'#').toString('base64');return [{json:d,binary:{file:{data:b64,fileName:(d.headline||'press')+'.md',mimeType:'text/markdown'}}}];"
+      },
+      "id": "pr4",
+      "name": "Prepare Doc (binary)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "binaryData": "={{$binary.file}}",
+        "options": {
+          "parentId": "press-releases-folder-id"
+        }
+      },
+      "id": "pr5",
+      "name": "Upload to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "media-list-sheet-id",
+        "range": "Media!A2:C999"
+      },
+      "id": "pr6",
+      "name": "Load Media List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        520
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[];return rows.map(r=>({json:{name:r[0],email:r[1],outlet:r[2]}}));"
+      },
+      "id": "pr7",
+      "name": "Normalize Media",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "pr@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "={{$prevNode['Draft Release (GPT-4)'].json.emailSubject}}",
+        "text": "={{$prevNode['Draft Release (GPT-4)'].json.emailBody + '\\nLink: '+$prevNode['Upload to Drive'].json.webViewLink}}"
+      },
+      "id": "pr8",
+      "name": "Email Journalists",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        520
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#pr",
+        "text": "Press release sent: {{$prevNode['Draft Release (GPT-4)'].json.headline}} to {{$items().length}} contacts."
+      },
+      "id": "pr9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Press Brief Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Brief": {
+      "main": [
+        [
+          {
+            "node": "Draft Release (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Release (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Doc (binary)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Doc (binary)": {
+      "main": [
+        [
+          {
+            "node": "Upload to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Media List": {
+      "main": [
+        [
+          {
+            "node": "Normalize Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Media": {
+      "main": [
+        [
+          {
+            "node": "Email Journalists",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

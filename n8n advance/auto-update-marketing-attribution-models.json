@@ -1,0 +1,169 @@
+{
+  "name": "auto-update-marketing-attribution-models",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 5 * * *"
+      },
+      "id": "am1",
+      "name": "Daily 05:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "attribution-sheet-id",
+        "range": "Touchpoints!A2:G999"
+      },
+      "id": "am2",
+      "name": "Load Touchpoints (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "attribution-sheet-id",
+        "range": "Conversions!A2:F999"
+      },
+      "id": "am3",
+      "name": "Load Conversions (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const tp=$items().find(i=>i.node.name==='Load Touchpoints (Sheets)')?.json?.rows||[];const cv=$items().find(i=>i.node.name==='Load Conversions (Sheets)')?.json?.rows||[];const toMap={}; for(const t of tp){const [cid,step,channel,date,weight,amount,meta]=t; (toMap[cid]=toMap[cid]||[]).push({step:Number(step||0),channel,date,weight:Number(weight||1)});} const out=[]; for(const c of cv){const [cid,value,model]=c; const touches=(toMap[cid]||[]).sort((a,b)=>a.step-b.step); if(!touches.length) continue; let alloc={}; if(model==='first'){alloc[touches[0].channel]=(alloc[touches[0].channel]||0)+Number(value);} else if(model==='last'){const last=touches[touches.length-1]; alloc[last.channel]=(alloc[last.channel]||0)+Number(value);} else if(model==='u-shaped'){ if(touches.length===1){alloc[touches[0].channel]=(alloc[touches[0].channel]||0)+Number(value);} else {const first=touches[0], last=touches[touches.length-1]; const rem=Number(value)*0.6; alloc[first.channel]=(alloc[first.channel]||0)+Number(value)*0.2; alloc[last.channel]=(alloc[last.channel]||0)+Number(value)*0.2; const midVal=rem/Math.max(1,touches.length-2); for(const t of touches.slice(1,-1)){alloc[t.channel]=(alloc[t.channel]||0)+midVal;}} } else if(model==='time-decay'){ let denom=0; const now=new Date(); for(const t of touches){const days=(now-new Date(t.date))/86400000; const w=Math.exp(-days/7); t._w=w; denom+=w;} for(const t of touches){const share=(t._w/denom)*Number(value); alloc[t.channel]=(alloc[t.channel]||0)+share;} } else { const share=Number(value)/touches.length; for(const t of touches){alloc[t.channel]=(alloc[t.channel]||0)+share;} } out.push({json:{cid,value:Number(value),model,allocation:Object.fromEntries(Object.entries(alloc).map(([k,v])=>[k,+v.toFixed(2)]))}}); } return out;"
+      },
+      "id": "am4",
+      "name": "Compute Attribution",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "attribution-sheet-id",
+        "range": "Results!A1",
+        "fields": [
+          "={{$json.cid}}",
+          "={{$json.model}}",
+          "={{JSON.stringify($json.allocation)}}",
+          "={{$json.value}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "am5",
+      "name": "Write Results (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#analytics",
+        "text": "Attribution updated for {{$json.cid}} using {{$json.model}} model."
+      },
+      "id": "am6",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 05:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Touchpoints (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Conversions (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Touchpoints (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Compute Attribution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Conversions (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Compute Attribution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Attribution": {
+      "main": [
+        [
+          {
+            "node": "Write Results (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

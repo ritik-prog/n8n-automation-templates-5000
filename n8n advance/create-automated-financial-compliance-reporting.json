@@ -1,0 +1,187 @@
+{
+  "name": "create-automated-financial-compliance-reporting",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 7 5 * *"
+      },
+      "id": "fc1",
+      "name": "Monthly 5th 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/journal?period=prev_month",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fc2",
+      "name": "Fetch Journal Entries",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.erp.example.com/v1/controls/tests?period=prev_month",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.erpToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fc3",
+      "name": "Fetch Control Tests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst je = $items(0).item.json || {};\nconst ct = $items(1).item.json || {};\nconst report = { controlsPassed: ct.passed||0, controlsFailed: ct.failed||0, journalCount: (je.entries||[]).length, exceptions: ct.exceptions||[] };\nconst text = `Compliance Summary\nControls Passed: ${report.controlsPassed}\nControls Failed: ${report.controlsFailed}\nJournal Entries: ${report.journalCount}\nExceptions: ${(report.exceptions||[]).join(', ')}`;\nreturn [{json:{text, fileName:`compliance-${new Date().toISOString().slice(0,7)}.txt`}}];\n"
+      },
+      "id": "fc4",
+      "name": "Compose Compliance",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "resource": "file",
+        "binaryData": false,
+        "additionalFields": {
+          "fileName": "={{$json.fileName}}",
+          "binaryPropertyName": "data"
+        },
+        "bucketName": "finance-compliance",
+        "fileContent": "={{$json.text}}"
+      },
+      "id": "fc5",
+      "name": "Upload to S3",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ],
+      "credentials": {
+        "s3": {
+          "id": "s3_cred",
+          "name": "S3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "compliance@yourcompany.com",
+        "toEmail": "compliance@yourcompany.com, cfo@yourcompany.com",
+        "subject": "Monthly Compliance Report",
+        "text": "={{$json.text}}"
+      },
+      "id": "fc6",
+      "name": "Email Compliance",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        200
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monthly 5th 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Journal Entries",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Control Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Journal Entries": {
+      "main": [
+        [
+          {
+            "node": "Compose Compliance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Control Tests": {
+      "main": [
+        [
+          {
+            "node": "Compose Compliance",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Compose Compliance": {
+      "main": [
+        [
+          {
+            "node": "Upload to S3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Compliance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

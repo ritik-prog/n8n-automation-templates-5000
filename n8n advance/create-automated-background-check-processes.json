@@ -1,0 +1,218 @@
+{
+  "name": "create-automated-background-check-processes",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bg-start"
+      },
+      "id": "bg1",
+      "name": "Start Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{name:b.name,email:b.email,candidateId:b.candidateId,package:b.package||'standard'}}];"
+      },
+      "id": "bg2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.checkvendor.com/v1/checks",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.bgCheckToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "candidateId": "={{$json.candidateId}}",
+          "package": "={{$json.package}}",
+          "email": "={{$json.email}}"
+        }
+      },
+      "id": "bg3",
+      "name": "Create Background Check (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "background-sheet-id",
+        "range": "Checks!A1",
+        "fields": [
+          "={{$json.candidateId}}",
+          "={{$json.email}}",
+          "={{$json.package}}",
+          "created",
+          "={{$now}}"
+        ]
+      },
+      "id": "bg4",
+      "name": "Log Start (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bg-result"
+      },
+      "id": "bg5",
+      "name": "Result Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{candidateId:b.candidateId,status:b.status,reportUrl:b.reportUrl,flags:b.flags||[]}}];"
+      },
+      "id": "bg6",
+      "name": "Normalize Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "background-sheet-id",
+        "range": "Checks!A1",
+        "fields": [
+          "={{$json.candidateId}}",
+          "=",
+          "=",
+          "={{$json.status}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "bg7",
+      "name": "Update Status (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        540,
+        500
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#recruiting",
+        "text": "\ud83d\udd0d Background check {{$json.status}} for {{$json.candidateId}} \u2014 {{$json.reportUrl||'no link'}}"
+      },
+      "id": "bg8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Start Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Create Background Check (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Start (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Result": {
+      "main": [
+        [
+          {
+            "node": "Update Status (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

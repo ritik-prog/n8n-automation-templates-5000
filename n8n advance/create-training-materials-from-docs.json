@@ -1,0 +1,150 @@
+{
+  "name": "create-training-materials-from-docs",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-documentation"
+      },
+      "id": "1",
+      "name": "Documentation Upload Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "training-doc-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { title: $json.body.title, content: $json.body.content } }];"
+      },
+      "id": "2",
+      "name": "Extract Documentation Content",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an expert instructional designer. Based on the documentation provided, generate a training module including:\n- Learning Objectives\n- Key Concepts\n- Quiz Questions (with answers)\n- Suggested Activities\nRespond in JSON."
+          },
+          {
+            "role": "user",
+            "content": "Title: {{$json.title}}\n\nContent: {{$json.content}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Training Content (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = JSON.parse($json.choices[0].message.content); return [{ json: data }];"
+      },
+      "id": "4",
+      "name": "Parse Training Module",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "training-materials-id",
+        "range": "Modules!A1",
+        "valueInputMode": "USER_ENTERED",
+        "fields": [
+          "={{$json.learningObjectives}}",
+          "={{$json.keyConcepts}}",
+          "={{$json.quizQuestions}}",
+          "={{$json.suggestedActivities}}"
+        ]
+      },
+      "id": "5",
+      "name": "Save Training Material to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Documentation Upload Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Documentation Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Documentation Content": {
+      "main": [
+        [
+          {
+            "node": "Generate Training Content (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Training Content (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Training Module",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Training Module": {
+      "main": [
+        [
+          {
+            "node": "Save Training Material to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

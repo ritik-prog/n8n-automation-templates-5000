@@ -1,0 +1,163 @@
+{
+  "name": "auto-update-contact-preferences-from-email-responses",
+  "nodes": [
+    {
+      "parameters": {
+        "downloadAttachments": false,
+        "options": {
+          "allowUnauthorizedCerts": false
+        },
+        "format": "simple",
+        "imap": true,
+        "box": "INBOX",
+        "criteria": "UNSEEN"
+      },
+      "id": "cp1",
+      "name": "IMAP Email Trigger",
+      "type": "n8n-nodes-base.imapEmail",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const s=($json.text||'').toLowerCase();let pref='opted_in';if(s.includes('unsubscribe')||s.includes('opt out')) pref='opted_out';else if(s.includes('weekly')) pref='weekly';else if(s.includes('monthly')) pref='monthly';return [{json:{from:$json.from, subject:$json.subject, pref}}];"
+      },
+      "id": "cp2",
+      "name": "Parse Preference",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "resource": "contact",
+        "additionalFields": {
+          "email": "={{$json.from}}"
+        }
+      },
+      "id": "cp3",
+      "name": "Find Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "update",
+        "updateFields": {
+          "email": "={{$prevNode['Parse Preference'].json.from}}",
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "subscription_status",
+                "value": "={{$prevNode['Parse Preference'].json.pref}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cp4",
+      "name": "Update Subscription",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "preferences@yourcompany.com",
+        "toEmail": "={{$prevNode['Parse Preference'].json.from}}",
+        "subject": "Your preferences are updated",
+        "text": "We have set your preference to: {{$prevNode['Parse Preference'].json.pref}}. You can reply with 'weekly' or 'monthly' to adjust."
+      },
+      "id": "cp5",
+      "name": "Confirm via Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "IMAP Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Preference",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Preference": {
+      "main": [
+        [
+          {
+            "node": "Find Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Contact": {
+      "main": [
+        [
+          {
+            "node": "Update Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Subscription": {
+      "main": [
+        [
+          {
+            "node": "Confirm via Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

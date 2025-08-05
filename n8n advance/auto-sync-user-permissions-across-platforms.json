@@ -1,0 +1,253 @@
+{
+  "name": "auto-sync-user-permissions-across-platforms",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/30 * * * *"
+      },
+      "id": "up1",
+      "name": "Every 30 min",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://iam.example.com/api/groups",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.iamToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "up2",
+      "name": "Fetch Source of Truth (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.okta.com/api/v1/users?limit=1000",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "SSWS {{$credentials.oktaToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "up3",
+      "name": "Fetch Okta Users (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst src=$items(0).item.json.groups||[]; // [{group, emails[]}]\nconst ok=$items(1).item.json.users||[];  // [{email, groups[]}]\nconst desired=new Map(src.map(g=>[g.group, new Set(g.emails||[])]));\nconst tasks=[];\nfor(const u of ok){\n  const email=u.email.toLowerCase();\n  const has=new Set((u.groups||[]).map(g=>g.toLowerCase()));\n  for(const [grp, emails] of desired.entries()){\n    const should=emails.has(email);\n    const inGrp=has.has(grp.toLowerCase());\n    if(should && !inGrp) tasks.push({action:'add', email, group:grp});\n    if(!should && inGrp) tasks.push({action:'remove', email, group:grp});\n  }\n}\nreturn tasks.map(t=>({json:t}));\n"
+      },
+      "id": "up4",
+      "name": "Drift Detection",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.okta.com/api/v1/groups/{{encodeURIComponent($json.group)}}/users/{{encodeURIComponent($json.email)}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "SSWS {{$credentials.oktaToken}}"
+              },
+              {
+                "name": "X-Method-Override",
+                "value": "PUT"
+              }
+            ]
+          }
+        }
+      },
+      "id": "up5",
+      "name": "Apply Add (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.okta.com/api/v1/groups/{{encodeURIComponent($json.group)}}/users/{{encodeURIComponent($json.email)}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "SSWS {{$credentials.oktaToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "up6",
+      "name": "Apply Remove (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "rules": [
+            {
+              "operation": "equal",
+              "value1": "={{$json.action}}",
+              "value2": "add"
+            }
+          ]
+        }
+      },
+      "id": "up7",
+      "name": "IF Add?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "devops-ops-sheet-id",
+        "range": "PermSync!A1",
+        "fields": [
+          "={{$now}}",
+          "={{$json.action}}",
+          "={{$json.email}}",
+          "={{$json.group}}"
+        ]
+      },
+      "id": "up8",
+      "name": "Log Change",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 30 min": {
+      "main": [
+        [
+          {
+            "node": "Fetch Source of Truth (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Okta Users (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Source of Truth (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Drift Detection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Okta Users (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Drift Detection",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Drift Detection": {
+      "main": [
+        [
+          {
+            "node": "IF Add?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Change",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Add?": {
+      "main": [
+        [
+          {
+            "node": "Apply Add (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Apply Remove (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

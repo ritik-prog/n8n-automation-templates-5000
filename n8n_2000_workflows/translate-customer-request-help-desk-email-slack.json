@@ -1,0 +1,129 @@
+{
+  "name": "Translate customer request from Help desk email and send to Slack",
+  "nodes": [
+    {
+      "id": "trigger-help-desk-email",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        90200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "translate-customer-request-from-help-desk-email-and-send-to-slack",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-help-desk-email",
+      "name": "Fetch data from Help desk email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        90200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/help-desk-email",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-translate-customer-request",
+      "name": "AI: Translate Customer Request",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        90200
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: translate customer request"
+      }
+    },
+    {
+      "id": "send-slack",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        90200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/slack",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-90200",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        90200
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Help desk email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Help desk email": {
+      "main": [
+        {
+          "node": "AI: Translate Customer Request",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Translate Customer Request": {
+      "main": [
+        [
+          {
+            "node": "AI: Translate Customer Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Slack": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

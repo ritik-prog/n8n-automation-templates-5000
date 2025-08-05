@@ -1,0 +1,262 @@
+{
+  "name": "auto-create-meeting-agendas-from-crm-opportunity-data",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "deal.propertyChange"
+        ]
+      },
+      "id": "ma1",
+      "name": "HubSpot Deal Trigger",
+      "type": "n8n-nodes-base.hubspotTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "hubspotDeveloperApi": {
+          "id": "hubspot_trigger_cred",
+          "name": "HubSpot Trigger OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const stage=$json.body?.propertyName==='dealstage' ? ($json.body?.propertyValue||'') : ''; if(!/appointmentscheduled|presentation|demo/i.test(stage)) return []; return [{json:{dealId:$json.body.objectId}}];"
+      },
+      "id": "ma2",
+      "name": "Gate on Meeting Stages",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "resource": "deal",
+        "dealId": "={{$json.dealId}}"
+      },
+      "id": "ma3",
+      "name": "Fetch Deal",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "resource": "engagement",
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "associatedObjectId",
+                "operation": "EQUAL",
+                "value": "={{$json.dealId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ma4",
+      "name": "Fetch Recent Activities",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Create a structured agenda for the upcoming meeting. Return JSON {title, objectives:[...], sections:[{topic,owner,durationMins}], questions:[...], materials:[...], docMarkdown}."
+          },
+          {
+            "role": "user",
+            "content": "Deal: {{$prevNode['Fetch Deal'].json}}\\nRecent: {{$json}}"
+          }
+        ]
+      },
+      "id": "ma5",
+      "name": "Generate Agenda (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={title:'Meeting Agenda',docMarkdown:'# Agenda\\n'}};const b64=Buffer.from(o.docMarkdown||'# Agenda').toString('base64');return [{json:o,binary:{file:{data:b64,fileName:(o.title||'Agenda')+'.md',mimeType:'text/markdown'}}}];"
+      },
+      "id": "ma6",
+      "name": "Build Doc (binary)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "binaryData": "={{$binary.file}}",
+        "options": {
+          "parentId": "meeting-agendas-folder-id"
+        }
+      },
+      "id": "ma7",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "sales@yourcompany.com",
+        "toEmail": "={{'owner+'+$prevNode['Fetch Deal'].json.properties?.hubspot_owner_id+'@yourcompany.com'}}",
+        "subject": "={{'Agenda ready: '+$prevNode['Build Doc (binary)'].json.title}}",
+        "text": "Agenda generated. Link: {{$prevNode['Upload to Google Drive'].json.webViewLink}}"
+      },
+      "id": "ma8",
+      "name": "Email Owner",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "HubSpot Deal Trigger": {
+      "main": [
+        [
+          {
+            "node": "Gate on Meeting Stages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate on Meeting Stages": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deal": {
+      "main": [
+        [
+          {
+            "node": "Fetch Recent Activities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Activities": {
+      "main": [
+        [
+          {
+            "node": "Generate Agenda (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Agenda (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Build Doc (binary)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Doc (binary)": {
+      "main": [
+        [
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Email Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

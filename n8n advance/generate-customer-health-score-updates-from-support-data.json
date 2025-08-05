@@ -1,0 +1,124 @@
+{
+  "name": "generate-customer-health-score-updates-from-support-data",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 4 * * *"
+      },
+      "id": "hs1",
+      "name": "Daily 04:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/account_metrics?range=30d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "hs2",
+      "name": "Fetch Account Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.accounts||$json||[]; return (Array.isArray(rows)?rows:[rows]).map(a=>{ let score=100; score-= (a.slaBreaches||0)*5; score-= Math.max(0,(a.avgResponseMins||0)-60)/10; score-= Math.max(0,(a.openTickets||0)-5)*2; score=Math.max(0,Math.min(100,Math.round(score))); return {json:{account:a.name||a.domain,score}}; });"
+      },
+      "id": "hs3",
+      "name": "Compute Health Score",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.crm.com/v1/accounts/health",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.crmToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "account": "={{$json.account}}",
+          "supportHealth": "={{$json.score}}"
+        }
+      },
+      "id": "hs4",
+      "name": "Push to CRM (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 04:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Account Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Account Metrics": {
+      "main": [
+        [
+          {
+            "node": "Compute Health Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Health Score": {
+      "main": [
+        [
+          {
+            "node": "Push to CRM (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

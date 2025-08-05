@@ -1,0 +1,134 @@
+{
+  "name": "create-automated-payment-reminder-sequences",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 8 * * *"
+      },
+      "id": "pr1",
+      "name": "Daily 08:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.accounting.example.com/v3/invoices?status=overdue",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.accountingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "pr2",
+      "name": "Fetch Overdue Invoices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst invs = $json.invoices||[];\nconst now = Date.now();\nreturn invs.map(i=>{\n  const due = new Date(i.dueDate).getTime();\n  const days = Math.floor((now-due)/86400000);\n  let step=1;\n  if(days>=30) step=3; else if(days>=14) step=2;\n  const subject = step===1?'Friendly reminder: Invoice overdue':\n                   step===2?'Second notice: Payment overdue':\n                   'Final notice before collections';\n  const body = `Hi ${i.customer.name},\nThis is a reminder that invoice ${i.number} (${i.total} ${i.currency}) was due on ${i.dueDate}.\nPlease pay here: ${i.payUrl}\nThank you.`;\n  return {json:{email:i.customer.email, subject, body, step, number:i.number, total:i.total, currency:i.currency}};\n});\n"
+      },
+      "id": "pr3",
+      "name": "Sequence Logic",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "billing@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "={{$json.subject}}",
+        "text": "={{$json.body}}"
+      },
+      "id": "pr4",
+      "name": "Send Reminder",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#ar",
+        "text": "\ud83d\udcec Sent step {{$json.step}} reminder for invoice {{$json.number}} ({{$json.total}} {{$json.currency}})"
+      },
+      "id": "pr5",
+      "name": "Slack AR",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 08:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Overdue Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Overdue Invoices": {
+      "main": [
+        [
+          {
+            "node": "Sequence Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sequence Logic": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack AR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

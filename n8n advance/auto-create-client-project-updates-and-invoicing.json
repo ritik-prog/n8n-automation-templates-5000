@@ -1,0 +1,267 @@
+{
+  "name": "auto-create-client-project-updates-and-invoicing",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 8 * * 5"
+      },
+      "id": "cu1",
+      "name": "Fridays 08:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://pm.example.com/api/projects/active",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pmToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cu2",
+      "name": "Fetch Active Projects (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.harvestapp.com/v2/reports/time?from={{encodeURIComponent(new Date(Date.now()-7*86400000).toISOString())}}&to={{encodeURIComponent(new Date().toISOString())}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.harvestToken}}"
+              },
+              {
+                "name": "Harvest-Account-Id",
+                "value": "{{$credentials.harvestAccountId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cu3",
+      "name": "Fetch Weekly Hours (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Compose client-friendly weekly project update including progress, highlights, blockers, and next steps. Keep it factual and concise."
+          },
+          {
+            "role": "user",
+            "content": "Projects: {{$items(0).item.json}}\\nTime: {{$items(1).item.json}}"
+          }
+        ]
+      },
+      "id": "cu4",
+      "name": "AI Compose Updates",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const md=$json.choices[0].message.content; return [{json:{md, fileName:'client-updates-'+$now+'.pdf'}}];"
+      },
+      "id": "cu5",
+      "name": "Wrap for PDF",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.pdf-service.example.com/markdown-to-pdf",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.pdfServiceToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "markdown": "={{$json.md}}",
+          "fileName": "={{$json.fileName}}"
+        }
+      },
+      "id": "cu6",
+      "name": "PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://billing.example.com/api/invoices/create_from_time?period=7d",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.billingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cu7",
+      "name": "Create Invoices (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "accounting@yourcompany.com",
+        "toEmail": "clients@yourcompany.com",
+        "subject": "Weekly project update & invoice",
+        "text": "Please find attached your weekly update and the invoice link."
+      },
+      "id": "cu8",
+      "name": "Email Clients",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Fridays 08:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Active Projects (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Weekly Hours (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Invoices (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Active Projects (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "AI Compose Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Hours (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "AI Compose Updates",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI Compose Updates": {
+      "main": [
+        [
+          {
+            "node": "Wrap for PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wrap for PDF": {
+      "main": [
+        [
+          {
+            "node": "PDF",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

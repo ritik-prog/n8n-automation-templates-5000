@@ -1,0 +1,103 @@
+{
+  "name": "Assign to salesperson from LinkedIn Ads and send to HubSpot",
+  "nodes": [
+    {
+      "id": "trigger-linkedin-ads",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        45500
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "assign-to-salesperson-from-linkedin-ads-and-send-to-hubspot",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-linkedin-ads",
+      "name": "Fetch data from LinkedIn Ads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        45500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/linkedin-ads",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-hubspot",
+      "name": "Send to HubSpot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        45500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/hubspot",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-45500",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        45500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from LinkedIn Ads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from LinkedIn Ads": {
+      "main": [
+        {
+          "node": "Send to HubSpot",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to HubSpot": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

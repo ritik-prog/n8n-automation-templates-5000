@@ -1,0 +1,283 @@
+{
+  "name": "create-automated-backup-and-recovery-processes",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 2 * * *"
+      },
+      "id": "b1",
+      "name": "Daily 02:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Build backup job matrix (dbs + paths); add retention & checksum\nconst jobs=[\n  {type:'postgres', name:'prod-db', host:'db.prod', db:'app', user:'backup', retentionDays:14},\n  {type:'filesystem', name:'uploads', path:'/mnt/uploads', retentionDays:7}\n];\nreturn jobs.map(j=>({json:j}));\n"
+      },
+      "id": "b2",
+      "name": "Backup Matrix",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://backup.example.com/api/run",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.backupToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "job": "={{$json}}"
+        }
+      },
+      "id": "b3",
+      "name": "Execute Backup (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Calculate checksum, build S3 key\nconst j=$json||{}; const name=j.name||'backup'; const ts=new Date().toISOString().replace(/[:.]/g,'-');\nconst key=`backups/${name}/${ts}.tar.gz`;\nreturn [{json:{...j, key, checksum:'sha256-placeholder-'+Math.random().toString(36).slice(2,10)}}];\n"
+      },
+      "id": "b4",
+      "name": "Checksum & Key",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "resource": "file",
+        "binaryData": false,
+        "additionalFields": {
+          "fileName": "={{$json.key}}",
+          "binaryPropertyName": "data"
+        },
+        "bucketName": "company-backups",
+        "fileContent": "={{JSON.stringify($json)}}"
+      },
+      "id": "b5",
+      "name": "Upload to S3 (placeholder)",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        760,
+        360
+      ],
+      "credentials": {
+        "s3": {
+          "id": "s3_cred",
+          "name": "S3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Expire old backups (retention policy)\nreturn [{json:{action:'expire', name:$json.name, retentionDays:$json.retentionDays}}];\n"
+      },
+      "id": "b6",
+      "name": "Retention Policy",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#infra",
+        "text": "\ud83d\uddc4\ufe0f Backup completed for {{$json.name}}. Key: {{$json.key}}"
+      },
+      "id": "b7",
+      "name": "Notify Backup",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "backup-restore-test"
+      },
+      "id": "b8",
+      "name": "Restore Test Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{name:b.name||'prod-db', key:b.key||'', target:b.target||'test-env'}}];"
+      },
+      "id": "b9",
+      "name": "Normalize Restore Req",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://backup.example.com/api/restore",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.backupToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "options_json": {
+          "name": "={{$json.name}}",
+          "key": "={{$json.key}}",
+          "target": "={{$json.target}}"
+        }
+      },
+      "id": "b10",
+      "name": "Execute Restore (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#infra",
+        "text": "\ud83e\uddea Restore test kicked for {{$json.name}} \u2192 {{$json.target}}"
+      },
+      "id": "b11",
+      "name": "Notify Restore",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 02:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Backup Matrix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backup Matrix": {
+      "main": [
+        [
+          {
+            "node": "Execute Backup (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Checksum & Key",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Backup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checksum & Key": {
+      "main": [
+        [
+          {
+            "node": "Upload to S3 (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Retention Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Restore Req",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Restore Req": {
+      "main": [
+        [
+          {
+            "node": "Execute Restore (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Restore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

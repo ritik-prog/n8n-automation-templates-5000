@@ -1,0 +1,176 @@
+{
+  "name": "generate-territory-performance-dashboards",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 5 * * *"
+      },
+      "id": "td1",
+      "name": "Daily 05:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true
+      },
+      "id": "td2",
+      "name": "Fetch Deals (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        220
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "resource": "contact"
+      },
+      "id": "td3",
+      "name": "Fetch Contacts (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        380
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const deals=Array.isArray($prevNode['Fetch Deals (HubSpot)'].json)?$prevNode['Fetch Deals (HubSpot)'].json:[$prevNode['Fetch Deals (HubSpot)'].json];const contacts=Array.isArray($prevNode['Fetch Contacts (HubSpot)'].json)?$prevNode['Fetch Contacts (HubSpot)'].json:[$prevNode['Fetch Contacts (HubSpot)'].json];const terrByEmail={};for(const c of contacts){ terrByEmail[c.properties?.email]=c.properties?.territory||'UNASSIGNED'; }const agg={};for(const d of deals){ const terr=d.properties?.territory || terrByEmail[d.properties?.contact_email] || 'UNASSIGNED'; const amt=Number(d.properties?.amount||0); const stage=(d.properties?.dealstage||'').toLowerCase(); if(!agg[terr]) agg[terr]={total:0, won:0, count:0}; agg[terr].total+=amt; agg[terr].count+=1; if(stage.includes('closedwon')) agg[terr].won+=amt; }const rows=Object.entries(agg).map(([t,v])=>({json:{territory:t,total:v.total,won:v.won,count:v.count}}));return rows;"
+      },
+      "id": "td4",
+      "name": "Aggregate by Territory",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "territory-dashboard-sheet-id",
+        "range": "Daily!A1",
+        "fields": [
+          "={{$json.territory}}",
+          "={{$json.total}}",
+          "={{$json.won}}",
+          "={{$json.count}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "td5",
+      "name": "Append to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#revops",
+        "text": "Territory dashboard updated. Top: {{$items().sort((a,b)=>b.json.won-a.json.won)[0]?.json.territory || 'n/a'}}"
+      },
+      "id": "td6",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 05:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deals (HubSpot)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Contacts (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Contacts (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate by Territory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deals (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate by Territory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate by Territory": {
+      "main": [
+        [
+          {
+            "node": "Append to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

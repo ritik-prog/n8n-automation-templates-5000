@@ -1,0 +1,105 @@
+{
+  "name": "generate-support-team-workload-balancing",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/30 * * * *"
+      },
+      "id": "wb1",
+      "name": "Every 30 minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/agents/workload",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "wb2",
+      "name": "Fetch Workload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const a=$json.agents||$json||[]; const arr=Array.isArray(a)?a:[a]; const avg=arr.reduce((s,x)=>s+(x.open||0),0)/Math.max(1,arr.length); const overloaded=arr.filter(x=>x.open>avg+3); const under=arr.filter(x=>x.open<avg-3); return [{json:{avg,overloaded:overloaded.map(x=>x.email),under:under.map(x=>x.email)}}];"
+      },
+      "id": "wb3",
+      "name": "Find Imbalance",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#support",
+        "text": "\u2696\ufe0f Workload avg {{$json.avg}} \u2014 overloaded: {{$json.overloaded.join(', ')}}; under: {{$json.under.join(', ')}}"
+      },
+      "id": "wb4",
+      "name": "Slack Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Every 30 minutes": {
+      "main": [
+        [
+          {
+            "node": "Fetch Workload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Workload": {
+      "main": [
+        [
+          {
+            "node": "Find Imbalance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Imbalance": {
+      "main": [
+        [
+          {
+            "node": "Slack Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

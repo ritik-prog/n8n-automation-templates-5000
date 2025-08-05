@@ -1,0 +1,142 @@
+{
+  "name": "Summarize Sales Call and Update CRM",
+  "nodes": [
+    {
+      "id": "trigger-google-drive",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        0
+      ],
+      "parameters": {
+        "watchFor": "file",
+        "drive": "myDrive",
+        "filters": {
+          "item": [
+            {
+              "fileExtension": "mp3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "download-file",
+      "name": "Download Recording",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        0
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{ $json.id }}"
+      }
+    },
+    {
+      "id": "transcribe-summarize",
+      "name": "Transcribe & Summarize Call",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "model": "whisper-1",
+        "operation": "transcribe",
+        "audio": "={{ $binary.data }}"
+      }
+    },
+    {
+      "id": "update-crm",
+      "name": "Update CRM Note",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "operation": "create",
+        "object": "note",
+        "engagement": {
+          "body": "={{ $json.transcription }}",
+          "associations": [
+            {
+              "objectType": "contact",
+              "objectId": "={{ $json.contactId }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "error-handler-600-0",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#sales-alerts",
+        "text": "={{ $json[\"error_message\"] || 'Workflow error' }}"
+      }
+    }
+  ],
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download Recording",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Recording": {
+      "main": [
+        [
+          {
+            "node": "Transcribe & Summarize Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe & Summarize Call": {
+      "main": [
+        [
+          {
+            "node": "Update CRM Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update CRM Note": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

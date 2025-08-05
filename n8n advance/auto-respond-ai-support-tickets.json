@@ -1,0 +1,147 @@
+{
+  "name": "auto-respond-ai-support-tickets",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support-ticket"
+      },
+      "id": "1",
+      "name": "Support Ticket Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "incoming-support-ticket"
+    },
+    {
+      "parameters": {
+        "functionCode": "const ticket = $json.body.ticket;\nreturn [{ json: { ticket } }];"
+      },
+      "id": "2",
+      "name": "Extract Ticket Message",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a helpful customer support assistant. Try to respond to common technical support queries using the knowledge base. If unsure, write a polite message stating that the ticket has been escalated."
+          },
+          {
+            "role": "user",
+            "content": "Support Ticket:\n{{$json.ticket}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Response with GPT-4",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { reply: $json.choices[0].message.content } }];"
+      },
+      "id": "4",
+      "name": "Format AI Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "support@yourcompany.com",
+        "toEmail": "={{$json.email || 'user@example.com'}}",
+        "subject": "Re: Your Support Ticket",
+        "text": "={{$json.reply}}"
+      },
+      "id": "5",
+      "name": "Send Auto-Response Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_credential",
+          "name": "SMTP Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Support Ticket Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Ticket Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Ticket Message": {
+      "main": [
+        [
+          {
+            "node": "Generate Response with GPT-4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Response with GPT-4": {
+      "main": [
+        [
+          {
+            "node": "Format AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format AI Response": {
+      "main": [
+        [
+          {
+            "node": "Send Auto-Response Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

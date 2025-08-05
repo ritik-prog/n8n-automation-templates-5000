@@ -1,0 +1,255 @@
+{
+  "name": "generate-marketing-personas-from-customer-data",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "customer-dataset"
+      },
+      "id": "1",
+      "name": "Dataset Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "customer-dataset-intake"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "url": "={{$json.body.csvUrl}}"
+      },
+      "id": "2",
+      "name": "Download CSV",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst text = $json.data || '';\nconst lines = text.split(/\\r?\\n/).filter(Boolean);\nif (!lines.length) return [{ json: { records: [] } }];\nconst header = lines[0].split(',');\nconst records = lines.slice(1).map(l => {\n  const cols = l.split(',');\n  return Object.fromEntries(header.map((h,i)=>[h.trim(), cols[i]]));\n});\nreturn [{ json: { records, sample: records.slice(0,50) } }];\n"
+      },
+      "id": "3",
+      "name": "Parse CSV to JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        580,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a market research analyst. Cluster customers and produce 3\u20136 personas. For each persona include: name, description, needs, painPoints, preferredChannels, keyMessages. Return JSON {personas: [...], segmentationLogic, dataSignals}."
+          },
+          {
+            "role": "user",
+            "content": "Customer sample: {{$json.sample}}"
+          }
+        ]
+      },
+      "id": "4",
+      "name": "Generate Personas (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        820,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nlet out; try { out = JSON.parse($json.choices[0].message.content); } catch(e){ out = { personas: [], error: 'parse_error' }; }\nreturn [{ json: out }];\n"
+      },
+      "id": "5",
+      "name": "Parse Personas JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "page",
+        "operation": "create",
+        "databaseId": "notion-personas-db-id",
+        "properties": {
+          "Title": {
+            "title": [
+              {
+                "text": {
+                  "content": "Persona Set - {{$now}}"
+                }
+              }
+            ]
+          },
+          "Segmentation Logic": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{$json.segmentationLogic || ''}}"
+                }
+              }
+            ]
+          },
+          "Signals": {
+            "rich_text": [
+              {
+                "text": {
+                  "content": "={{JSON.stringify($json.dataSignals||{})}}"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "id": "6",
+      "name": "Create Notion Persona Summary",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        240
+      ],
+      "credentials": {
+        "notionApi": {
+          "id": "notion_credential",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "personas-sheet-id",
+        "range": "Personas!A1",
+        "fields": [
+          "={{$json.name}}",
+          "={{$json.description}}",
+          "={{$json.needs?.join('; ')}}",
+          "={{$json.painPoints?.join('; ')}}",
+          "={{$json.preferredChannels?.join(', ')}}",
+          "={{$json.keyMessages?.join('; ')}}"
+        ]
+      },
+      "id": "7",
+      "name": "Write Each Persona to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        380
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst personas = $json.personas || [];\nreturn personas.map(p => ({ json: p }));\n"
+      },
+      "id": "8",
+      "name": "Fan-out Personas",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Dataset Webhook": {
+      "main": [
+        [
+          {
+            "node": "Download CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download CSV": {
+      "main": [
+        [
+          {
+            "node": "Parse CSV to JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse CSV to JSON": {
+      "main": [
+        [
+          {
+            "node": "Generate Personas (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Personas (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Personas JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Personas JSON": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Persona Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fan-out Personas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan-out Personas": {
+      "main": [
+        [
+          {
+            "node": "Write Each Persona to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

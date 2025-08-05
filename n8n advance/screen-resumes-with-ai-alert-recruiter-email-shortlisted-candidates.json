@@ -1,0 +1,254 @@
+{
+  "name": "screen-resumes-with-ai-alert-recruiter-email-shortlisted-candidates",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "resume-screen"
+      },
+      "id": "rs1",
+      "name": "Resume Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;return [{json:{candidate:{name:b.name||'',email:b.email||'',phone:b.phone||''},role:b.role||'',jd:b.jobDescription||'',resumeText:b.resumeText||'',resumeUrl:b.resumeUrl||''}}];"
+      },
+      "id": "rs2",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.resumeUrl}}",
+        "responseFormat": "string"
+      },
+      "id": "rs3",
+      "name": "Fetch Resume (optional)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const txt=$json||''; if(txt && (!$prevNode['Normalize Payload'].json.resumeText || $prevNode['Normalize Payload'].json.resumeText.length<200)) {return [{json:{...$prevNode['Normalize Payload'].json, resumeText: String(txt).slice(0,15000)}}];} return [$prevNode['Normalize Payload']];"
+      },
+      "id": "rs4",
+      "name": "Use Fetched Text if Better",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a recruiter assistant. Score the resume vs the JD on a 0-100 scale and extract key signals. Return strict JSON {score: number, summary: string, strengths: string[], risks: string[], keywords: string[]}."
+          },
+          {
+            "role": "user",
+            "content": "JD:\\n{{$json.jd}}\\n\\nRESUME:\\n{{$json.resumeText}}"
+          }
+        ]
+      },
+      "id": "rs5",
+      "name": "AI Match Score (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        980,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let out={score:0,summary:'',strengths:[],risks:[],keywords:[]};try{out=JSON.parse($json.choices[0].message.content)}catch(e){}const shortlisted=out.score>=70;return [{json:{...$prevNode['Use Fetched Text if Better'].json, ...out, shortlisted}}];"
+      },
+      "id": "rs6",
+      "name": "Parse & Threshold",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "recruiting-sheet-id",
+        "range": "Screening!A1",
+        "fields": [
+          "={{$json.candidate.email}}",
+          "={{$json.role}}",
+          "={{$json.score}}",
+          "={{$json.shortlisted}}",
+          "={{$json.summary}}",
+          "={{($json.strengths||[]).join(', ')}}",
+          "={{($json.risks||[]).join(', ')}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "rs7",
+      "name": "Log to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        260
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#recruiting",
+        "text": "{{$json.shortlisted ? '\u2705' : '\u26a0\ufe0f'}} {{$json.candidate.name}} scored {{$json.score}} for {{$json.role}} \u2014 {{$json.summary}}"
+      },
+      "id": "rs8",
+      "name": "Notify Recruiter (Slack)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "recruiting@yourcompany.com",
+        "toEmail": "={{$json.candidate.email}}",
+        "subject": "={{$json.shortlisted ? 'Next step: Interview availability' : 'Thanks for applying'}}",
+        "text": "={{$json.shortlisted ? 'Hi '+$json.candidate.name+',\\nThanks for applying for '+$json.role+'. We would love to schedule a call. Please pick a time here: https://cal.com/yourteam\\n\\n\u2014 Recruiting' : 'Hi '+$json.candidate.name+',\\nThanks for your interest in '+$json.role+'. We will keep your resume on file and reach out if there is a fit.\\n\\n\u2014 Recruiting'}}"
+      },
+      "id": "rs9",
+      "name": "Email Candidate (SMTP)",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        320
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Resume Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Fetch Resume (optional)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI Match Score (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Resume (optional)": {
+      "main": [
+        [
+          {
+            "node": "Use Fetched Text if Better",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Fetched Text if Better": {
+      "main": [
+        [
+          {
+            "node": "AI Match Score (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Match Score (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse & Threshold",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Threshold": {
+      "main": [
+        [
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Recruiter (Slack)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Candidate (SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

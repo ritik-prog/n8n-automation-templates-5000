@@ -1,0 +1,147 @@
+{
+  "name": "auto-create-user-stories-from-feature-requirements",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-feature-requirements"
+      },
+      "id": "1",
+      "name": "Upload Feature Requirements",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "feature-requirements-upload"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { features: $json.body.features, module: $json.body.module } }];"
+      },
+      "id": "2",
+      "name": "Extract Feature Info",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.4,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a product manager. Convert feature requirements into user stories using the format: 'As a [user], I want to [goal], so that [reason]'. Return as JSON array."
+          },
+          {
+            "role": "user",
+            "content": "Module: {{$json.module}}\nFeatures:\n{{$json.features}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate User Stories (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const stories = JSON.parse($json.choices[0].message.content); return stories.map((story, index) => ({ json: { id: index + 1, story } }));"
+      },
+      "id": "4",
+      "name": "Parse Stories",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "user-stories-tracker-sheet",
+        "range": "UserStories!A1",
+        "fields": [
+          "={{$json.id}}",
+          "={{$json.story}}"
+        ]
+      },
+      "id": "5",
+      "name": "Save User Stories to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_credential",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Upload Feature Requirements": {
+      "main": [
+        [
+          {
+            "node": "Extract Feature Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Feature Info": {
+      "main": [
+        [
+          {
+            "node": "Generate User Stories (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate User Stories (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Stories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Stories": {
+      "main": [
+        [
+          {
+            "node": "Save User Stories to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

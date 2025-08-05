@@ -1,0 +1,129 @@
+{
+  "name": "create-automated-bug-report-workflows-to-development",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ticket-labeled-bug"
+      },
+      "id": "bg1",
+      "name": "Bug Ticket Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{id:b.id,subject:b.subject||'',description:b.description||b.latestComment||'',severity:b.severity||'Medium',steps:b.steps||''}}];"
+      },
+      "id": "bg2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "issue",
+        "projectKey": "ENG",
+        "summary": "={{'Bug: '+$json.subject}}",
+        "description": "={{'Severity: '+$json.severity+'\\n\\nRepro steps:\\n'+$json.steps+'\\n\\nSupport link: https://helpdesk/tickets/'+$json.id}}",
+        "additionalFields": {
+          "issuetype": {
+            "name": "Bug"
+          }
+        }
+      },
+      "id": "bg3",
+      "name": "Create Jira Issue",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 2,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "jira_cred",
+          "name": "Jira Cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.helpdesk.com/v1/tickets/{{$json.id}}/comment",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.helpdeskToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "public": false,
+          "body": "={{'Created Jira issue for this bug.'}}"
+        }
+      },
+      "id": "bg4",
+      "name": "Post Internal Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Bug Ticket Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Create Jira Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Jira Issue": {
+      "main": [
+        [
+          {
+            "node": "Post Internal Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

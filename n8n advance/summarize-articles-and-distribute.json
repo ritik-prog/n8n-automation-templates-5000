@@ -1,0 +1,171 @@
+{
+  "name": "summarize-articles-and-distribute",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "article-upload"
+      },
+      "id": "1",
+      "name": "Article Upload Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "upload-article-text"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { title: $json.body.title, content: $json.body.content } }];"
+      },
+      "id": "2",
+      "name": "Extract Article Content",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a summarization bot. Summarize the given article into key points with a professional tone."
+          },
+          {
+            "role": "user",
+            "content": "Title: {{$json.title}}\n\nContent: {{$json.content}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Summarize Article (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { summary: $json.choices[0].message.content, title: $json.title } }];"
+      },
+      "id": "4",
+      "name": "Format Summary Message",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#team-news",
+        "text": "*Summary: {{$json.title}}*\n\n{{$json.summary}}"
+      },
+      "id": "5",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        900,
+        200
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "slack_credential",
+          "name": "Slack Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "teamId": "your-team-id",
+        "channelId": "your-channel-id",
+        "message": "*Summary: {{$json.title}}*\n\n{{$json.summary}}"
+      },
+      "id": "6",
+      "name": "Send to Microsoft Teams",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 1,
+      "position": [
+        900,
+        400
+      ],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "teams_credential",
+          "name": "Teams OAuth"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Article Upload Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Article Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Article Content": {
+      "main": [
+        [
+          {
+            "node": "Summarize Article (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Article (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Format Summary Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Summary Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to Microsoft Teams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

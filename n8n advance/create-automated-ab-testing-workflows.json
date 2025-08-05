@@ -1,0 +1,289 @@
+{
+  "name": "create-automated-ab-testing-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ab-assign"
+      },
+      "id": "ab1",
+      "name": "Assign Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b = $json.body || $json; const exp = b.experiment || 'default_exp'; const user = (b.userId || b.email || '').toString(); if (!user) { return [{json:{error:'userId or email required'}}]; } let hash=0; for(let i=0;i<user.length;i++){ hash=((hash<<5)-hash)+user.charCodeAt(i); hash|=0; } const variant = (Math.abs(hash)%100) < (b.splitB||50) ? 'B' : 'A'; const meta = { experiment: exp, user, variant, ts: new Date().toISOString(), channel: b.channel||'email', campaign: b.campaign||'' }; return [{json: meta}];"
+      },
+      "id": "ab2",
+      "name": "Deterministic Assign",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "ab-experiments-sheet-id",
+        "range": "Assignments!A1",
+        "fields": [
+          "={{$json.experiment}}",
+          "={{$json.user}}",
+          "={{$json.variant}}",
+          "={{$json.channel}}",
+          "={{$json.campaign}}",
+          "={{$json.ts}}"
+        ]
+      },
+      "id": "ab3",
+      "name": "Log Assignment (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        540,
+        160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ab-convert"
+      },
+      "id": "ab4",
+      "name": "Conversion Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;return [{json:{experiment:b.experiment,user:(b.userId||b.email||'').toString(),value:Number(b.value||1),ts:new Date().toISOString()}}];"
+      },
+      "id": "ab5",
+      "name": "Normalize Conversion",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "ab-experiments-sheet-id",
+        "range": "Conversions!A1",
+        "fields": [
+          "={{$json.experiment}}",
+          "={{$json.user}}",
+          "={{$json.value}}",
+          "={{$json.ts}}"
+        ]
+      },
+      "id": "ab6",
+      "name": "Log Conversion (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        540,
+        420
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "cronExpression": "0 7 * * *"
+      },
+      "id": "ab7",
+      "name": "Daily 07:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "ab-experiments-sheet-id",
+        "range": "Assignments!A2:F999"
+      },
+      "id": "ab8",
+      "name": "Get Assignments",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        640
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "ab-experiments-sheet-id",
+        "range": "Conversions!A2:D999"
+      },
+      "id": "ab9",
+      "name": "Get Conversions",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        720
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const assigns = ($json.assignments || $items().find(i=>i.node.name==='Get Assignments')?.json?.rows) || []; const convs   = ($json.conversions || $items().find(i=>i.node.name==='Get Conversions')?.json?.rows) || []; const convMap = new Map(); for (const r of convs) { if (!r || !r[0]) continue; const key = r[0]+'|'+r[1]; const v = Number(r[2]||0); convMap.set(key, (convMap.get(key)||0)+v); } const byExp = {}; for (const a of assigns) { if (!a || !a[0]) continue; const [exp,user,variant] = [a[0],a[1],a[2]]; byExp[exp] = byExp[exp] || {A:{n:0,c:0},B:{n:0,c:0}}; byExp[exp][variant].n += 1; const val = convMap.get(exp+'|'+user) || 0; if (val>0) byExp[exp][variant].c += 1; } function zTest(p1,n1,p2,n2){ const p = (p1*n1 + p2*n2)/(n1+n2); const se = Math.sqrt(p*(1-p)*(1/n1 + 1/n2)); if (se===0) return {z:0,p:1}; const z = (p1 - p2)/se; function erf(x){ const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911; const sign=x>=0?1:-1; x=Math.abs(x); const t=1.0/(1.0+p*x); const y=1.0-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x); return sign*y; } const pval = 2*(1-0.5*(1+erf(Math.abs(z)/Math.SQRT2))); return {z,p:pval}; } const out = []; for (const [exp, v] of Object.entries(byExp)) { const pA = v.A.c/Math.max(1,v.A.n); const pB = v.B.c/Math.max(1,v.B.n); const {z,p} = zTest(pA,Math.max(1,v.A.n),pB,Math.max(1,v.B.n)); const winner = p<0.05 ? (pB>pA?'B':'A') : 'Inconclusive'; out.push({json:{experiment:exp, A:v.A, B:v.B, pA:+pA.toFixed(4), pB:+pB.toFixed(4), z:+z.toFixed(3), p:+p.toFixed(4), winner}}); } return out;"
+      },
+      "id": "ab10",
+      "name": "Analyze & Significance",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#growth",
+        "text": "A/B Analysis {{$json.experiment}} \u2014 pA {{$json.pA}}, pB {{$json.pB}}, p {{$json.p}}, Winner: {{$json.winner}}"
+      },
+      "id": "ab11",
+      "name": "Slack Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        680
+      ]
+    }
+  ],
+  "connections": {
+    "Assign Webhook": {
+      "main": [
+        [
+          {
+            "node": "Deterministic Assign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deterministic Assign": {
+      "main": [
+        [
+          {
+            "node": "Log Assignment (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversion Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Conversion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Conversion": {
+      "main": [
+        [
+          {
+            "node": "Log Conversion (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Get Assignments",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Conversions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Assignments": {
+      "main": [
+        [
+          {
+            "node": "Analyze & Significance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Conversions": {
+      "main": [
+        [
+          {
+            "node": "Analyze & Significance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze & Significance": {
+      "main": [
+        [
+          {
+            "node": "Slack Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

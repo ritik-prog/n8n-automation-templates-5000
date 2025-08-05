@@ -1,0 +1,162 @@
+{
+  "name": "create-automated-software-license-compliance-tracking",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 4 * * 1"
+      },
+      "id": "lc1",
+      "name": "Weekly Mon 04:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://mdm.example.com/api/devices/software",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.mdmToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "lc2",
+      "name": "Fetch Install Inventory (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://licensing.example.com/api/entitlements",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.licensingToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "lc3",
+      "name": "Fetch License Entitlements (placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst inv=$items(0).item.json.software||[]; // [{app, seatsUsed}]\nconst ent=$items(1).item.json.entitlements||[]; // [{app, seatsTotal}]\nconst mapE=new Map(ent.map(e=>[e.app.toLowerCase(), e.seatsTotal]));\nconst rows=inv.map(i=>{\n  const app=i.app.toLowerCase();\n  const total=mapE.get(app)||0;\n  const used=i.seatsUsed||0;\n  const diff=total-used;\n  return {app:i.app, total, used, available:diff, status: diff<0?'OVER':'OK'};\n});\nreturn rows.map(r=>({json:r}));\n"
+      },
+      "id": "lc4",
+      "name": "Compare Usage vs Licenses",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "devops-ops-sheet-id",
+        "range": "Licenses!A1",
+        "fields": [
+          "={{$json.app}}",
+          "={{$json.total}}",
+          "={{$json.used}}",
+          "={{$json.available}}",
+          "={{$json.status}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "lc5",
+      "name": "Write to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#it-ops",
+        "text": "\ud83d\udd11 License: {{$json.app}} \u2014 {{$json.used}} / {{$json.total}} ({{$json.status}})"
+      },
+      "id": "lc6",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 04:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Install Inventory (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch License Entitlements (placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Install Inventory (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Compare Usage vs Licenses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch License Entitlements (placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Compare Usage vs Licenses",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

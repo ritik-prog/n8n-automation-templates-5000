@@ -1,0 +1,122 @@
+{
+  "name": "auto-update-lead-sources-from-form-submissions",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "form-submit"
+      },
+      "id": "ls1",
+      "name": "Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;const utm=(b.utm||{});const ref=(b.referrer||'');let source=b.source||utm.source||'';if(/linkedin|facebook|twitter|x\\.com|instagram|tiktok/i.test(ref)) source='Social';if(/google|bing|duckduckgo/i.test(ref)) source='Organic Search';if(/ads|gclid|utm_medium=cpc/i.test(JSON.stringify(utm))) source='Paid';return [{json:{email:b.email, source, campaign:utm.campaign||'', medium:utm.medium||'', ref}}];"
+      },
+      "id": "ls2",
+      "name": "Normalize UTM",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "upsert",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "email",
+                "value": "={{$json.email}}"
+              },
+              {
+                "property": "lead_source",
+                "value": "={{$json.source}}"
+              },
+              {
+                "property": "utm_campaign",
+                "value": "={{$json.campaign}}"
+              },
+              {
+                "property": "utm_medium",
+                "value": "={{$json.medium}}"
+              },
+              {
+                "property": "first_referrer",
+                "value": "={{$json.ref}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ls3",
+      "name": "Upsert Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#mql-triage",
+        "text": "Lead source updated for {{$prevNode['Normalize UTM'].json.email}} \u2192 {{$prevNode['Normalize UTM'].json.source}} / {{$prevNode['Normalize UTM'].json.campaign}}"
+      },
+      "id": "ls4",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Form Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize UTM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize UTM": {
+      "main": [
+        [
+          {
+            "node": "Upsert Contact",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

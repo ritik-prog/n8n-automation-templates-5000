@@ -1,0 +1,103 @@
+{
+  "name": "Generate shipping label from WooCommerce price change and send to Warehouse system",
+  "nodes": [
+    {
+      "id": "trigger-woocommerce-price-change",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        179900
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-shipping-label-from-woocommerce-price-change-and-send-to-warehouse-system",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-woocommerce-price-change",
+      "name": "Fetch data from WooCommerce price change",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        179900
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/woocommerce-price-change",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-warehouse-system",
+      "name": "Send to Warehouse system",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        179900
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/warehouse-system",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-179900",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        179900
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from WooCommerce price change",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from WooCommerce price change": {
+      "main": [
+        {
+          "node": "Send to Warehouse system",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Warehouse system": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

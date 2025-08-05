@@ -1,0 +1,166 @@
+{
+  "name": "Generate Invoice PDF and Email",
+  "nodes": [
+    {
+      "id": "trigger-sheet",
+      "name": "New Invoice Row",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        600
+      ],
+      "parameters": {
+        "sheetId": "={{ $env.INVOICE_SHEET_ID }}",
+        "range": "Invoices!A2:F",
+        "watchFor": "rowAdded"
+      }
+    },
+    {
+      "id": "format-invoice",
+      "name": "Format Invoice Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        600
+      ],
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "customerName",
+              "value": "={{ $json[\"Name\"] }}"
+            },
+            {
+              "name": "customerEmail",
+              "value": "={{ $json[\"Email\"] }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $json[\"Amount\"] }}"
+            },
+            {
+              "name": "invoiceDate",
+              "value": "={{ $json[\"Date\"] }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "create-pdf",
+      "name": "Create Invoice PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        0,
+        600
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apitemplate.io/v1/create-pdf",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "template_id",
+              "value": "{{ $env.INVOICE_TEMPLATE_ID }}"
+            },
+            {
+              "name": "data",
+              "value": "={{ $json }}"
+            }
+          ]
+        },
+        "responseFormat": "file",
+        "options": {}
+      }
+    },
+    {
+      "id": "send-email",
+      "name": "Send Invoice Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        300,
+        600
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "to": "={{ $json.customerEmail }}",
+        "subject": "Your Invoice",
+        "message": "Hello {{ $json.customerName }}, attached is your invoice.",
+        "attachments": [
+          {
+            "binaryPropertyName": "data"
+          }
+        ]
+      }
+    },
+    {
+      "id": "error-handler-600-600",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        600
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#finance-alerts",
+        "text": "={{ $json[\"error_message\"] || 'Workflow error' }}"
+      }
+    }
+  ],
+  "connections": {
+    "New Invoice Row": {
+      "main": [
+        [
+          {
+            "node": "Format Invoice Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Invoice Data": {
+      "main": [
+        [
+          {
+            "node": "Create Invoice PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Invoice PDF": {
+      "main": [
+        [
+          {
+            "node": "Send Invoice Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Invoice Email": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

@@ -1,0 +1,248 @@
+{
+  "name": "auto-generate-employee-satisfaction-surveys",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 9 1 * *"
+      },
+      "id": "es1",
+      "name": "Monthly 1st 09:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "hr-sheet-id",
+        "range": "Employees!A2:C999"
+      },
+      "id": "es2",
+      "name": "Load Employees (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        320,
+        240
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows=$json.rows||[];return rows.map(r=>({json:{name:r[0],email:r[1]}}));"
+      },
+      "id": "es3",
+      "name": "To Recipients",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "hr@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Monthly satisfaction pulse",
+        "text": "Hi {{$json.name}},\\nTwo-minute survey: https://yourdomain.com/eneps?e={{encodeURIComponent($json.email)}}\\n\u2014 HR"
+      },
+      "id": "es4",
+      "name": "Send Survey Email",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "eneps-response"
+      },
+      "id": "es5",
+      "name": "Response Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{email:b.email,score:Number(b.score||0),comment:b.comment||''}}];"
+      },
+      "id": "es6",
+      "name": "Normalize Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Classify sentiment and themes. Return JSON {sentiment:'pos|neu|neg', themes:[...], summary}."
+          },
+          {
+            "role": "user",
+            "content": "{{$json}}"
+          }
+        ]
+      },
+      "id": "es7",
+      "name": "AI Tag",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        520
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "people-analytics-sheet-id",
+        "range": "ENPS!A1",
+        "fields": [
+          "={{$prevNode['Normalize Response'].json.email}}",
+          "={{$prevNode['Normalize Response'].json.score}}",
+          "={{$json.sentiment}}",
+          "={{($json.themes||[]).join(', ')}}",
+          "={{$json.summary}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "es8",
+      "name": "Log (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        520
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#people-ops",
+        "text": "\ud83d\udcdd eNPS from {{$prevNode['Normalize Response'].json.email}} \u2014 score {{$prevNode['Normalize Response'].json.score}} ({{$json.sentiment}})"
+      },
+      "id": "es9",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Monthly 1st 09:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Load Employees (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Employees (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "To Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To Recipients": {
+      "main": [
+        [
+          {
+            "node": "Send Survey Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Response": {
+      "main": [
+        [
+          {
+            "node": "AI Tag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Tag": {
+      "main": [
+        [
+          {
+            "node": "Log (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,216 @@
+{
+  "name": "create-automated-survey-distribution-and-analysis",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 9 * * 1"
+      },
+      "id": "sv1",
+      "name": "Weekly Mon 09:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "resource": "contact"
+      },
+      "id": "sv2",
+      "name": "Fetch Contacts (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        260
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const cs=Array.isArray($json)?$json:[$json];const targets=cs.filter(c=>['customer','evangelist'].includes((c.properties?.lifecyclestage||'').toLowerCase()));return targets.map(t=>({json:{email:t.properties?.email, name:t.properties?.firstname}}));"
+      },
+      "id": "sv3",
+      "name": "Pick Targets",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "research@yourcompany.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Quick 2\u2011minute survey",
+        "text": "Hi {{$json.name||'there'}},\\nWe value your feedback. Please share thoughts here: https://forms.gle/yourform \\nThanks!"
+      },
+      "id": "sv4",
+      "name": "Send Survey Invite",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "survey-response"
+      },
+      "id": "sv5",
+      "name": "Survey Response Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;return [{json:{email:b.email, score:Number(b.score||0), comments:b.comments||'', ts:new Date().toISOString()}}];"
+      },
+      "id": "sv6",
+      "name": "Normalize Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Summarize survey comments and extract themes & action items. Return JSON {themes:[...], actions:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "Response: {{$json}}"
+          }
+        ]
+      },
+      "id": "sv7",
+      "name": "Analyze (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        540
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#research",
+        "text": "New survey from {{$prevNode['Normalize Response'].json.email}} \u2014 themes: {{($json.themes||[]).join(', ')}}"
+      },
+      "id": "sv8",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        540
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Mon 09:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Contacts (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Contacts (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Pick Targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Targets": {
+      "main": [
+        [
+          {
+            "node": "Send Survey Invite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Survey Response Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Response": {
+      "main": [
+        [
+          {
+            "node": "Analyze (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

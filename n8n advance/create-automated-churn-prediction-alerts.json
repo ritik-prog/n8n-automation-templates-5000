@@ -1,0 +1,320 @@
+{
+  "name": "create-automated-churn-prediction-alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 4 * * *"
+      },
+      "id": "c1",
+      "name": "Daily 04:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "filtersUi": {
+            "conditions": [
+              {
+                "key": "lifecyclestage",
+                "operation": "EQUAL",
+                "value": "customer"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c2",
+      "name": "Fetch Customers (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const arr = Array.isArray($json)?$json:[$json];return arr.map(c => ({ json: {companyId: c.id,name: c.properties?.name,domain: c.properties?.domain,ownerId: c.properties?.hubspot_owner_id,plan: c.properties?.subscription_plan || '',seats: Number(c.properties?.seats_purchased || 0)}}));"
+      },
+      "id": "c3",
+      "name": "Normalize Companies",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://dw.yourcompany.com/api/v1/usage?domain={{$json.domain}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.dwApiKey}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c4",
+      "name": "Fetch Usage (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://support.yourcompany.com/api/v2/stats?domain={{$json.domain}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.supportApiKey}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c5",
+      "name": "Fetch Support (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        760,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const usage = $items().find(i=>i.node.name==='Fetch Usage (HTTP)')?.json || {};const support = $items().find(i=>i.node.name==='Fetch Support (HTTP)')?.json || {};const company = $prevNode['Normalize Companies'].json;const feats={mau:Number(usage.mau||0),wau:Number(usage.wau||0),dau:Number(usage.dau||0),licenseUtil:Number(usage.license_utilization||0),featureAdoptCore:Number((usage.feature_adoption||{}).core||0),featureAdoptAdv:Number((usage.feature_adoption||{}).advanced||0),tickets30d:Number(support.tickets_30d||0),csat:Number(support.csat||0),nps:Number(support.nps||0),outages30d:Number(support.outages_30d||0)};let score=0;score+=Math.min(20,feats.mau/(company.seats||1)*20);score+=Math.min(10,feats.licenseUtil/10);score+=Math.max(0,10-Math.max(0,feats.tickets30d-2));score+=Math.max(0,(feats.csat/100)*10);score+=Math.max(0,((feats.nps+100)/200)*10);score-=Math.min(10,feats.outages30d*2);return [{json:{company,feats,baseScore:Math.round(score)}}];"
+      },
+      "id": "c6",
+      "name": "Build Feature Vector",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a customer retention analyst. Given features and a baseScore(0-100), output JSON {risk:'LOW|MEDIUM|HIGH', adj:-20..+20, reason, actions:[...]} for churn risk within 60 days."
+          },
+          {
+            "role": "user",
+            "content": "Features: {{$json.feats}} BaseScore: {{$json.baseScore}} Plan: {{$json.company.plan}} Seats: {{$json.company.seats}}"
+          }
+        ]
+      },
+      "id": "c7",
+      "name": "AI Risk Model",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let o;try{o=JSON.parse($json.choices[0].message.content)}catch(e){o={risk:'MEDIUM',adj:0,reason:'parse',actions:[]}};const final=Math.max(0,Math.min(100,($prevNode['Build Feature Vector'].json.baseScore||0)+(o.adj||0)));return [{json:{risk:o.risk,finalScore:final,reason:o.reason,actions:o.actions}}];"
+      },
+      "id": "c8",
+      "name": "Finalize Risk",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "company",
+        "operation": "update",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "churn_risk_ai",
+                "value": "={{$json.risk}}"
+              },
+              {
+                "property": "churn_score_ai",
+                "value": "={{$json.finalScore}}"
+              },
+              {
+                "property": "churn_reason_ai",
+                "value": "={{$json.reason}}"
+              }
+            ]
+          }
+        },
+        "companyId": "={{$prevNode['Normalize Companies'].json.companyId}}"
+      },
+      "id": "c9",
+      "name": "Update HubSpot Company",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1640,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#churn-watch",
+        "text": "{{$prevNode['Normalize Companies'].json.name}} \u2014 Risk {{$prevNode['Finalize Risk'].json.risk}} ({{$prevNode['Finalize Risk'].json.finalScore}}). {{$prevNode['Finalize Risk'].json.reason}}"
+      },
+      "id": "c10",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1860,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 04:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Customers (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Customers (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Companies": {
+      "main": [
+        [
+          {
+            "node": "Fetch Usage (HTTP)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Support (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Usage (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Build Feature Vector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Support (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Build Feature Vector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Feature Vector": {
+      "main": [
+        [
+          {
+            "node": "AI Risk Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Risk Model": {
+      "main": [
+        [
+          {
+            "node": "Finalize Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Risk": {
+      "main": [
+        [
+          {
+            "node": "Update HubSpot Company",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

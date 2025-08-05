@@ -1,0 +1,220 @@
+{
+  "name": "auto-create-upsell-opportunities-from-usage-data",
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "0 6 * * *"
+      },
+      "id": "u1",
+      "name": "Daily 06:00 UTC",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://dw.yourcompany.com/api/v1/upsell-candidates",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.dwApiKey}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "u2",
+      "name": "Fetch Upsell Candidates (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const arr = Array.isArray($json)?$json:[$json];return arr.map(r => ({ json: r }));"
+      },
+      "id": "u3",
+      "name": "Normalize Candidates",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "resource": "company",
+        "additionalFields": {
+          "domain": "={{$json.domain}}"
+        }
+      },
+      "id": "u4",
+      "name": "Find Company (HubSpot)",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const c = $json;const est = Number($prevNode['Normalize Candidates'].json.estUpsellARR||0);return [{ json: {dealname: (c.properties?.name||c.properties?.domain||'Upsell') + ' - Upsell',amount: est,pipeline: 'upsell_pipeline',dealstage: 'appointmentscheduled',companyId: c.id}}];"
+      },
+      "id": "u5",
+      "name": "Build Deal Model",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "deal",
+        "operation": "create",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "dealname",
+                "value": "={{$json.dealname}}"
+              },
+              {
+                "property": "amount",
+                "value": "={{$json.amount}}"
+              },
+              {
+                "property": "pipeline",
+                "value": "={{$json.pipeline}}"
+              },
+              {
+                "property": "dealstage",
+                "value": "={{$json.dealstage}}"
+              },
+              {
+                "property": "associatedcompanyid",
+                "value": "={{$json.companyId}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "u6",
+      "name": "Create Upsell Deal",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#upsell",
+        "text": "Upsell deal created for {{$prevNode['Find Company (HubSpot)'].json.properties?.name}} \u2014 Est ARR {{$prevNode['Normalize Candidates'].json.estUpsellARR}}"
+      },
+      "id": "u7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Fetch Upsell Candidates (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Upsell Candidates (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Candidates": {
+      "main": [
+        [
+          {
+            "node": "Find Company (HubSpot)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Company (HubSpot)": {
+      "main": [
+        [
+          {
+            "node": "Build Deal Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Deal Model": {
+      "main": [
+        [
+          {
+            "node": "Create Upsell Deal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Upsell Deal": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

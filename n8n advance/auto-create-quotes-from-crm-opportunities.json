@@ -1,0 +1,277 @@
+{
+  "name": "auto-create-quotes-from-crm-opportunities",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "deal.propertyChange"
+        ]
+      },
+      "id": "q1",
+      "name": "HubSpot Deal Trigger (property change)",
+      "type": "n8n-nodes-base.hubspotTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ],
+      "credentials": {
+        "hubspotDeveloperApi": {
+          "id": "hubspot_trigger_cred",
+          "name": "HubSpot Trigger OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst stage = $json.body?.propertyName==='dealstage' ? $json.body?.propertyValue : '';\nif (!stage || !/quote|proposal/i.test(stage)) { return []; }\nreturn [{ json: { dealId: $json.body.objectId, newStage: stage } }];\n"
+      },
+      "id": "q2",
+      "name": "Gate on Quote Stage",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        360,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "resource": "deal",
+        "dealId": "={{$json.dealId}}"
+      },
+      "id": "q3",
+      "name": "Fetch Deal",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        580,
+        320
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{`https://api.hubapi.com/crm/v3/objects/deals/${$json.id}/associations/line_items`}}",
+        "authentication": "predefinedCredentialType"
+      },
+      "id": "q4",
+      "name": "Fetch Line Items (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        800,
+        240
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst deal = $prevNode['Fetch Deal'].json;\nconst items = ($json.results||[]).map(r => ({ sku: r.to?.id, name: r.to?.properties?.name||'Item', qty: Number(r.to?.properties?.quantity||1), unitPrice: Number(r.to?.properties?.price||0) }));\nlet subtotal = 0;\nfor (const it of items) subtotal += it.qty * it.unitPrice;\nconst taxRate = 0.18;\nconst tax = +(subtotal * taxRate).toFixed(2);\nconst total = +(subtotal + tax).toFixed(2);\nreturn [{ json: { dealId: deal.id, dealName: deal.properties?.dealname, currency: deal.properties?.deal_currency_code || 'USD', items, subtotal, tax, taxRate, total, contactEmail: deal.properties?.associatedcontactemails || '' } }];\n"
+      },
+      "id": "q5",
+      "name": "Assemble Quote Model",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Generate concise quote terms & conditions. Return JSON {paymentTerms, delivery, warranty, validityDays, notes}."
+          },
+          {
+            "role": "user",
+            "content": "Deal {{$json.dealName}} total {{$json.total}} {{$json.currency}}. Items: {{$json.items}}"
+          }
+        ]
+      },
+      "id": "q6",
+      "name": "Generate T&Cs (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        240
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let t;try{t=JSON.parse($json.choices[0].message.content)}catch(e){t={paymentTerms:'Net 30',delivery:'Standard',warranty:'12 months',validityDays:30,notes:''}}; return [{json:t}];"
+      },
+      "id": "q7",
+      "name": "Parse T&Cs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "sheetId": "quotes-ledger-sheet-id",
+        "range": "Quotes!A1",
+        "fields": [
+          "={{$prevNode['Assemble Quote Model'].json.dealId}}",
+          "={{$prevNode['Assemble Quote Model'].json.dealName}}",
+          "={{$prevNode['Assemble Quote Model'].json.currency}}",
+          "={{$prevNode['Assemble Quote Model'].json.subtotal}}",
+          "={{$prevNode['Assemble Quote Model'].json.tax}}",
+          "={{$prevNode['Assemble Quote Model'].json.total}}",
+          "={{$json.paymentTerms}}",
+          "={{$json.delivery}}",
+          "={{$json.warranty}}",
+          "={{$json.validityDays}}"
+        ]
+      },
+      "id": "q8",
+      "name": "Write Quote Ledger (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        240
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "quotes@yourcompany.com",
+        "toEmail": "={{$prevNode['Assemble Quote Model'].json.contactEmail || 'sales@yourcompany.com'}}",
+        "subject": "Quote for {{$prevNode['Assemble Quote Model'].json.dealName}} \u2014 {{$prevNode['Assemble Quote Model'].json.total}} {{$prevNode['Assemble Quote Model'].json.currency}}",
+        "text": "Hello,\\n\\nPlease find your quote summary below.\\nTotal: {{$prevNode['Assemble Quote Model'].json.total}} {{$prevNode['Assemble Quote Model'].json.currency}}\\nSubtotal: {{$prevNode['Assemble Quote Model'].json.subtotal}}\\nTax: {{$prevNode['Assemble Quote Model'].json.tax}}\\nPayment Terms: {{$prevNode['Parse T&Cs'].json.paymentTerms}}\\nValidity: {{$prevNode['Parse T&Cs'].json.validityDays}} days\\n\\nA detailed breakdown is recorded in our system. Reply to confirm.\\n\\nThanks,"
+      },
+      "id": "q9",
+      "name": "Email Quote to Customer",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        240
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "HubSpot Deal Trigger (property change)": {
+      "main": [
+        [
+          {
+            "node": "Gate on Quote Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate on Quote Stage": {
+      "main": [
+        [
+          {
+            "node": "Fetch Deal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Deal": {
+      "main": [
+        [
+          {
+            "node": "Fetch Line Items (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Line Items (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Assemble Quote Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Quote Model": {
+      "main": [
+        [
+          {
+            "node": "Generate T&Cs (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate T&Cs (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse T&Cs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse T&Cs": {
+      "main": [
+        [
+          {
+            "node": "Write Quote Ledger (Sheets)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Quote to Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

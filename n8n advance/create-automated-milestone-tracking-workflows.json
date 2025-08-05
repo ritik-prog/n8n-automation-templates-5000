@@ -1,0 +1,124 @@
+{
+  "name": "create-automated-milestone-tracking-workflows",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "milestone-upsert"
+      },
+      "id": "ms1",
+      "name": "Milestone Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst b=$json.body||$json;\nreturn [{json:{id:b.id||('ms-'+Date.now()), title:b.title, due:b.due, owner:b.owner, project:b.project||'PM', status:(b.status||'planned').toLowerCase()}}];\n"
+      },
+      "id": "ms2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst due=new Date($json.due);\nconst now=new Date();\nreturn [ {json:{when: new Date(due.getTime()-7*86400000).toISOString(), what:'D-7'}},\n         {json:{when: new Date(due.getTime()-1*86400000).toISOString(), what:'D-1'}},\n         {json:{when: due.toISOString(), what:'D-0'}} ];\n"
+      },
+      "id": "ms3",
+      "name": "Build Reminders",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#project-apollo",
+        "text": "\ud83d\udccc Milestone {{$prevNode['Normalize'].json.title}} reminder {{$json.what}} (due {{$prevNode['Normalize'].json.due}})"
+      },
+      "id": "ms4",
+      "name": "Slack Reminder",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "pm@yourcompany.com",
+        "toEmail": "={{$prevNode['Normalize'].json.owner}}",
+        "subject": "Milestone reminder: {{$prevNode['Normalize'].json.title}}",
+        "text": "{{$json.what}} reminder. Due {{$prevNode['Normalize'].json.due}}."
+      },
+      "id": "ms5",
+      "name": "Email Owner",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        380
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Milestone Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Build Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reminders": {
+      "main": [
+        [
+          {
+            "node": "Slack Reminder",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

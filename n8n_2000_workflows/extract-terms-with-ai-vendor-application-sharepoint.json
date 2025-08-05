@@ -1,0 +1,129 @@
+{
+  "name": "Extract terms with ai from Vendor application and send to SharePoint",
+  "nodes": [
+    {
+      "id": "trigger-vendor-application",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        167400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-terms-with-ai-from-vendor-application-and-send-to-sharepoint",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-vendor-application",
+      "name": "Fetch data from Vendor application",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        167400
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/vendor-application",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai-extract-terms-with-ai",
+      "name": "AI: Extract Terms With Ai",
+      "type": "n8n-nodes-base.openAIApi",
+      "typeVersion": 1,
+      "position": [
+        0,
+        167400
+      ],
+      "parameters": {
+        "model": "gpt-4",
+        "operation": "complete",
+        "prompt": "Perform the following action on the incoming data: extract terms with AI"
+      }
+    },
+    {
+      "id": "send-sharepoint",
+      "name": "Send to SharePoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        167400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/sharepoint",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-167400",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        167400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Vendor application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Vendor application": {
+      "main": [
+        {
+          "node": "AI: Extract Terms With Ai",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "AI: Extract Terms With Ai": {
+      "main": [
+        [
+          {
+            "node": "AI: Extract Terms With Ai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to SharePoint": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

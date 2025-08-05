@@ -1,0 +1,166 @@
+{
+  "name": "auto-documentation-from-repository",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "push",
+        "owner": "your-org",
+        "repository": "your-repo"
+      },
+      "id": "1",
+      "name": "GitHub Webhook Trigger",
+      "type": "n8n-nodes-base.githubTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "github_credential",
+          "name": "GitHub OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getRepository",
+        "owner": "your-org",
+        "repository": "your-repo"
+      },
+      "id": "2",
+      "name": "Fetch Repository Metadata",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        300,
+        200
+      ],
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "github_credential",
+          "name": "GitHub OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getFile",
+        "owner": "your-org",
+        "repository": "your-repo",
+        "filePath": "src/main.py",
+        "branch": "main"
+      },
+      "id": "3",
+      "name": "Fetch Code File",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        300,
+        400
+      ],
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "github_credential",
+          "name": "GitHub OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an AI technical writer. Generate markdown-style documentation for the given source code, including description, usage, and parameters."
+          },
+          {
+            "role": "user",
+            "content": "Code:\n{{$json.content}}"
+          }
+        ]
+      },
+      "id": "4",
+      "name": "Generate Docs (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "repository": "your-repo",
+        "filePath": "docs/generated.md",
+        "branch": "main",
+        "content": "={{$json.choices[0].message.content}}",
+        "commitMessage": "Update auto-generated docs"
+      },
+      "id": "5",
+      "name": "Commit Docs to GitHub",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "github_credential",
+          "name": "GitHub OAuth"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "GitHub Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Repository Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Code File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Code File": {
+      "main": [
+        [
+          {
+            "node": "Generate Docs (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Docs (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Commit Docs to GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,145 @@
+{
+  "name": "create-automated-referral-tracking-systems",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "referral"
+      },
+      "id": "rf1",
+      "name": "Referral Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json;const email=(b.email||'').toLowerCase();let code=(b.code||'');if(!code){let h=0;for(let i=0;i<email.length;i++){h=((h<<5)-h)+email.charCodeAt(i);h|=0;}code='RF'+Math.abs(h);}return [{json:{email,referrer:b.referrer,emailReferrer:b.referrerEmail||'',code}}];"
+      },
+      "id": "rf2",
+      "name": "Generate Referral Code",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "upsert",
+        "additionalFields": {
+          "propertiesUi": {
+            "propertyValues": [
+              {
+                "property": "email",
+                "value": "={{$json.email}}"
+              },
+              {
+                "property": "referral_code",
+                "value": "={{$json.code}}"
+              },
+              {
+                "property": "referrer",
+                "value": "={{$json.referrer || ''}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "rf3",
+      "name": "Upsert Contact with Referral",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "hubspotApi": {
+          "id": "hubspot_api_cred",
+          "name": "HubSpot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sheetId": "referrals-sheet-id",
+        "range": "Ledger!A1",
+        "fields": [
+          "={{$json.email}}",
+          "={{$json.code}}",
+          "={{$json.referrer}}",
+          "={{$now}}"
+        ]
+      },
+      "id": "rf4",
+      "name": "Append to Referral Ledger",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google_sheets_cred",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#growth",
+        "text": "New referral captured: {{$prevNode['Generate Referral Code'].json.email}} code {{$prevNode['Generate Referral Code'].json.code}}"
+      },
+      "id": "rf5",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Referral Webhook": {
+      "main": [
+        [
+          {
+            "node": "Generate Referral Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Referral Code": {
+      "main": [
+        [
+          {
+            "node": "Upsert Contact with Referral",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Append to Referral Ledger",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

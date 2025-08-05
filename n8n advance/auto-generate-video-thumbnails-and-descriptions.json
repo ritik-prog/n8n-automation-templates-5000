@@ -1,0 +1,204 @@
+{
+  "name": "auto-generate-video-thumbnails-and-descriptions",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "video-brief"
+      },
+      "id": "va1",
+      "name": "Video Brief Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const b=$json.body||$json; return [{json:{title:b.title||'',topic:b.topic||'',audience:b.audience||'',keyPoints:b.keyPoints||[]}}];"
+      },
+      "id": "va2",
+      "name": "Normalize Brief",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Write YouTube metadata. Return JSON {title, description, tags:[...]}."
+          },
+          {
+            "role": "user",
+            "content": "Video {{$json.title}} | Topic {{$json.topic}} | Audience {{$json.audience}} | Points {{$json.keyPoints}}"
+          }
+        ]
+      },
+      "id": "va3",
+      "name": "Generate Metadata (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let m;try{m=JSON.parse($json.choices[0].message.content)}catch(e){m={title:'',description:'',tags:[]}}; return [{json:m}];"
+      },
+      "id": "va4",
+      "name": "Parse Metadata JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.replicate.com/v1/predictions",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Token {{$credentials.replicateToken}}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "jsonParameters": true,
+        "options_json": {
+          "version": "stable-diffusion-version-id",
+          "input": {
+            "prompt": "={{'YouTube thumbnail, bold title about '+$prevNode['Normalize Brief'].json.topic+', high contrast, simple composition'}}"
+          }
+        }
+      },
+      "id": "va5",
+      "name": "Generate Thumbnail (Replicate placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "binaryData": "={{$binary.image}}",
+        "options": {
+          "parentId": "video-thumbnails-folder-id"
+        }
+      },
+      "id": "va6",
+      "name": "Upload Thumbnail to Drive (placeholder)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        980,
+        360
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive_cred",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#video",
+        "text": "Video metadata ready: {{$prevNode['Parse Metadata JSON'].json.title}}"
+      },
+      "id": "va7",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Video Brief Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Brief": {
+      "main": [
+        [
+          {
+            "node": "Generate Metadata (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Metadata (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse Metadata JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Metadata JSON": {
+      "main": [
+        [
+          {
+            "node": "Generate Thumbnail (Replicate placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload Thumbnail to Drive (placeholder)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

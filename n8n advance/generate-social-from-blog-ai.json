@@ -1,0 +1,182 @@
+{
+  "name": "generate-social-from-blog-ai",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-blog-post"
+      },
+      "id": "1",
+      "name": "New Blog Post Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "new-blog-content"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { title: $json.body.title, content: $json.body.content } }];"
+      },
+      "id": "2",
+      "name": "Extract Blog Content",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "temperature": 0.5,
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a creative content marketer. Your task is to create social media content from a blog post. Provide:\n- 1 LinkedIn post (professional)\n- 1 Instagram caption (engaging)\n- 1 tweet (concise and impactful)\nRespond in JSON format with fields: linkedin, instagram, twitter."
+          },
+          {
+            "role": "user",
+            "content": "Blog Title: {{$json.title}}\n\nContent: {{$json.content}}"
+          }
+        ]
+      },
+      "id": "3",
+      "name": "Generate Social Content (GPT-4)",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst post = JSON.parse($json.choices[0].message.content);\nreturn [{ json: post }];\n"
+      },
+      "id": "4",
+      "name": "Parse AI Social Content",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "createPost",
+        "platform": "LinkedIn",
+        "text": "={{$json.linkedin}}"
+      },
+      "id": "5",
+      "name": "Post to LinkedIn",
+      "type": "n8n-nodes-custom.socialPoster",
+      "typeVersion": 1,
+      "position": [
+        900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "createPost",
+        "platform": "Instagram",
+        "text": "={{$json.instagram}}"
+      },
+      "id": "6",
+      "name": "Post to Instagram",
+      "type": "n8n-nodes-custom.socialPoster",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "createPost",
+        "platform": "Twitter",
+        "text": "={{$json.twitter}}"
+      },
+      "id": "7",
+      "name": "Post to Twitter",
+      "type": "n8n-nodes-custom.socialPoster",
+      "typeVersion": 1,
+      "position": [
+        900,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "New Blog Post Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Blog Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Blog Content": {
+      "main": [
+        [
+          {
+            "node": "Generate Social Content (GPT-4)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Social Content (GPT-4)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Social Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Social Content": {
+      "main": [
+        [
+          {
+            "node": "Post to LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post to Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post to Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

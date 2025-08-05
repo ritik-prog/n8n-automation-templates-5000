@@ -1,0 +1,151 @@
+{
+  "name": "summarize-zoom-meeting-action-items",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "zoom-webhook"
+      },
+      "id": "1",
+      "name": "Zoom Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "zoom-meeting-end-trigger"
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "Meeting",
+        "operation": "get",
+        "meetingId": "={{$json.payload.object.id}}"
+      },
+      "id": "2",
+      "name": "Get Zoom Meeting Transcript",
+      "type": "n8n-nodes-base.zoom",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ],
+      "credentials": {
+        "zoomApi": {
+          "id": "zoom_api_credential",
+          "name": "Zoom API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { transcript: $json.transcript || 'Meeting transcript goes here' } }];"
+      },
+      "id": "3",
+      "name": "Extract Transcript",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "messages": [
+          {
+            "role": "system",
+            "content": "Summarize the following Zoom meeting transcript and extract clear, bullet-point action items."
+          },
+          {
+            "role": "user",
+            "content": "={{$json.transcript}}"
+          }
+        ]
+      },
+      "id": "4",
+      "name": "Summarize with OpenAI",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#team-meetings",
+        "text": "Meeting Summary:\n{{$json.choices[0].message.content}}"
+      },
+      "id": "5",
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "slack_credential",
+          "name": "Slack API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Zoom Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Zoom Meeting Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Zoom Meeting Transcript": {
+      "main": [
+        [
+          {
+            "node": "Extract Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transcript": {
+      "main": [
+        [
+          {
+            "node": "Summarize with OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize with OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Send to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

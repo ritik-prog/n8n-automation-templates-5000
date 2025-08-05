@@ -1,0 +1,160 @@
+{
+  "name": "create-automated-lab-result-notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lab-result"
+      },
+      "id": "lr1",
+      "name": "Lab Result Webhook (FHIR)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\n// Expect FHIR DiagnosticReport or Observation bundle\nconst r=$json.body||$json;\nlet critical=false, patient='', email='', phone='';\nif(r.resourceType==='DiagnosticReport'){\n  patient=r.subject?.reference||'';\n  critical = (r.conclusionCode||[]).some(c=> (c.coding||[]).some(k=> ['CRIT','critical'].includes((k.code||'').toUpperCase())));\n} else if(r.resourceType==='Observation'){\n  patient=r.subject?.reference||'';\n  critical = (r.interpretation||[]).some(i=> (i.coding||[]).some(k=> ['<','>','A','HH','LL','CRIT'].includes((k.code||'').toUpperCase())));\n}\nreturn [{json:{patientRef:patient, critical, resource:r}}];\n"
+      },
+      "id": "lr2",
+      "name": "Classify Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ehr.example.com/fhir/{{$json.patientRef}}",
+        "authentication": "none",
+        "options": {
+          "headersUi": {
+            "parameter": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{$credentials.ehrToken}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "lr3",
+      "name": "Fetch Patient (FHIR)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        540,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nfunction getTelecom(p,system){ return (p.telecom||[]).find(t=>t.system===system)?.value }\nconst p=$json;\nreturn [{json:{email:getTelecom(p,'email'), phone:getTelecom(p,'phone'), name:(p.name?.[0]?.text)||'Patient'}}];\n"
+      },
+      "id": "lr4",
+      "name": "Extract Contacts",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "#clinicians",
+        "text": "\ud83e\uddea Critical lab result received \u2014 clinician review required (PHI redacted)."
+      },
+      "id": "lr5",
+      "name": "Notify Clinician (Slack; redacted)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "no-reply@hospital.org",
+        "toEmail": "={{$json.email}}",
+        "subject": "New Lab Result Available",
+        "text": "A new lab result is available in your patient portal. Please log in securely to view details.",
+        "options": {}
+      },
+      "id": "lr6",
+      "name": "Notify Patient (Email)",
+      "type": "n8n-nodes-base.smtp",
+      "typeVersion": 1,
+      "position": [
+        980,
+        380
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_cred",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Lab Result Webhook (FHIR)": {
+      "main": [
+        [
+          {
+            "node": "Classify Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Result": {
+      "main": [
+        [
+          {
+            "node": "Fetch Patient (FHIR)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Patient (FHIR)": {
+      "main": [
+        [
+          {
+            "node": "Extract Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Contacts": {
+      "main": [
+        [
+          {
+            "node": "Notify Clinician (Slack; redacted)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Patient (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false
+}

@@ -1,0 +1,103 @@
+{
+  "name": "Update lead status from Web form and send to Zoho CRM",
+  "nodes": [
+    {
+      "id": "trigger-web-form",
+      "name": "Incoming Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        52000
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-lead-status-from-web-form-and-send-to-zoho-crm",
+        "responseCode": 200,
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "fetch-web-form",
+      "name": "Fetch data from Web form",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        52000
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example.com/web-form",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "send-zoho-crm",
+      "name": "Send to Zoho CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        300,
+        52000
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/zoho-crm",
+        "responseFormat": "json",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-handler-600-52000",
+      "name": "Send Error to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [
+        600,
+        52000
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#automation-alerts",
+        "text": "={{ $json.get('error_message', 'An error occurred') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Incoming Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch data from Web form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch data from Web form": {
+      "main": [
+        {
+          "node": "Send to Zoho CRM",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "Send to Zoho CRM": {
+      "main": [
+        [
+          {
+            "node": "Send Error to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}
