@@ -1,13 +1,5 @@
 ---
 
-### 🔖 Sponsored
-
-This content is **sponsored by [AI Kaptan](https://www.aikaptan.com/)** — a platform dedicated to discovering, reviewing, and showcasing the latest AI tools, products, and innovations across industries.
-
-Explore more AI-powered solutions and insights at **AI Kaptan**.
-
----
-
 # 🔄 5000+ Advanced n8n Workflow Templates – Real-World, Multi-Platform Automation
 
 Welcome to the **largest open-source collection of production-grade n8n workflows**. With over **5000+ ready-to-use templates**, this repository empowers you to automate real-world tasks across sales, marketing, operations, support, and AI-driven use cases.
